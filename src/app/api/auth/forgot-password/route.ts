@@ -1,4 +1,14 @@
-// app/api/auth/forgot-password/route.ts
+import { NextRequest } from 'next/server'
+import { PrismaClient } from '@prisma/client'
+import { 
+  createApiResponse, 
+  createApiError, 
+  validateEmail,
+  generateToken
+} from '@/lib/api-utils'
+
+const prisma = new PrismaClient()
+
 export async function POST(request: NextRequest) {
   try {
     const { email } = await request.json()
@@ -23,7 +33,7 @@ export async function POST(request: NextRequest) {
       const resetToken = generateToken({
         userId: user.id,
         email: user.email,
-        role: user.role
+        role: user.role as 'USER' | 'ADMIN'
       })
       
       // Dans une implémentation complète, on enverrait un email

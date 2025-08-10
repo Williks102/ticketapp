@@ -1,6 +1,16 @@
-// app/api/auth/login/route.ts
-import { comparePassword } from '@/lib/api-utils'
-import { LoginRequest } from '@/types/api'
+// app/api/auth/login/route.ts - Version corrigée
+import { NextRequest } from 'next/server'
+import { PrismaClient } from '@prisma/client'
+import { 
+  createApiResponse, 
+  createApiError, 
+  validateRequired,
+  comparePassword,
+  generateToken
+} from '@/lib/api-utils'
+import { LoginRequest, AuthResponse } from '@/types/api'
+
+const prisma = new PrismaClient()
 
 export async function POST(request: NextRequest) {
   try {
@@ -69,7 +79,7 @@ export async function POST(request: NextRequest) {
     const token = generateToken({
       userId: user.id,
       email: user.email,
-      role: user.role
+      role: user.role as 'USER' | 'ADMIN'
     })
 
     const response: AuthResponse = {
@@ -78,7 +88,7 @@ export async function POST(request: NextRequest) {
         email: user.email,
         nom: user.nom,
         prenom: user.prenom,
-        role: user.role
+        role: user.role as 'USER' | 'ADMIN'
       },
       token
     }

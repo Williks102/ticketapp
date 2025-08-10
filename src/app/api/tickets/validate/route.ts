@@ -1,4 +1,20 @@
 // app/api/tickets/validate/route.ts
+import { 
+  createApiResponse, 
+  createApiError, 
+  validateRequired,
+  authenticateRequest,
+  requireAdmin,
+  comparePassword,
+  generateToken,
+  hashPassword,
+  validateEmail,
+  validatePassword,
+  generateTicketNumber,
+  generateQRCode
+} from '@/lib/api-utils'
+import prisma from '@/lib/prisma'
+
 import { ValidateTicketRequest, ValidateTicketResponse } from '@/types/api'
 
 // POST /api/tickets/validate - Valider un billet

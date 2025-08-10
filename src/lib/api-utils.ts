@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
+import bcrypt from 'bcryptjs'
+import QRCode from 'qrcode'
 import { ApiError, ApiResponse } from '@/types/api'
 
 // Configuration JWT
@@ -147,18 +149,6 @@ export function validatePassword(password: string): string[] {
     errors.push('Le mot de passe doit contenir au moins 6 caractères')
   }
   
-  if (!/(?=.*[a-z])/.test(password)) {
-    errors.push('Le mot de passe doit contenir au moins une minuscule')
-  }
-  
-  if (!/(?=.*[A-Z])/.test(password)) {
-    errors.push('Le mot de passe doit contenir au moins une majuscule')
-  }
-  
-  if (!/(?=.*\d)/.test(password)) {
-    errors.push('Le mot de passe doit contenir au moins un chiffre')
-  }
-  
   return errors
 }
 
@@ -167,9 +157,7 @@ export function generateToken(payload: JWTPayload): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' })
 }
 
-// Utilitaire pour hasher les mots de passe
-import bcrypt from 'bcryptjs'
-
+// Utilitaires pour hasher les mots de passe
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12)
 }
@@ -189,8 +177,6 @@ export function generateTicketNumber(): string {
 }
 
 // Utilitaire pour générer des QR codes
-import QRCode from 'qrcode'
-
 export async function generateQRCode(data: string): Promise<string> {
   try {
     return await QRCode.toDataURL(data, {
@@ -225,18 +211,6 @@ export function calculateRevenue(tickets: Array<{ prix: number }>): number {
 export function calculateConversionRate(visitors: number, purchases: number): number {
   if (visitors === 0) return 0
   return (purchases / visitors) * 100
-}
-
-// Utilitaire pour les notifications email
-export interface EmailData {
-  to: string
-  subject: string
-  html: string
-  attachments?: Array<{
-    filename: string
-    content: Buffer
-    contentType: string
-  }>
 }
 
 // Utilitaire pour le logging

@@ -1,4 +1,21 @@
 // app/api/tickets/[id]/pdf/route.ts
+import { 
+  createApiResponse, 
+  createApiError, 
+  validateRequired,
+  authenticateRequest,
+  requireAdmin,
+  comparePassword,
+  generateToken,
+  hashPassword,
+  validateEmail,
+  validatePassword,
+  generateTicketNumber,
+  generateQRCode
+} from '@/lib/api-utils'
+import prisma from '@/lib/prisma'
+
+
 export async function GET(
   request: NextRequest,
   { params }: RouteParams
