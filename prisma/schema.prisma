@@ -1,0 +1,248 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  nom       String
+  prenom    String
+  telephone String?
+  password  String
+  role      Role     @default(USER)
+  statut    UserStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLogin DateTime?
+
+  // Relations
+  tickets Ticket[]
+  activityLogs ActivityLog[]
+
+  @@map("users")
+  @@index([email])
+  @@index([role])
+  @@index([statut])
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  titre       String
+  description String
+  lieu        String
+  adresse     String
+  dateDebut   DateTime
+  dateFin     DateTime
+  prix        Decimal  @db.Decimal(10, 2)
+  nbPlaces    Int
+  placesRestantes Int
+  image       String?
+  organisateur String
+  statut      EventStatus @default(ACTIVE)
+  categories  String[] // PostgreSQL array pour les catégories
+  
+  // Métadonnées pour la recherche
+  searchVector String? // Pour la recherche full-text PostgreSQL
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  tickets Ticket[]
+  eventStats EventStats?
+
+  @@map("events")
+  @@index([statut])
+  @@index([dateDebut])
+  @@index([lieu])
+  @@index([prix])
+  @@index([categories])
+  @@index([createdAt])
+}
+
+model Ticket {
+  id          String      @id @default(cuid())
+  numeroTicket String     @unique
+  qrCode      String      // Base64 du QR code
+  statut      TicketStatus @default(VALID)
+  prix        Decimal     @db.Decimal(10, 2)
+  
+  // Informations de validation
+  validatedAt DateTime?
+  validatedBy String?   // ID de l'admin qui a validé
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  // Relations
+  userId      String?
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  eventId     String
+  event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  // Info pour les achats sans compte
+  guestEmail    String?
+  guestNom      String?
+  guestPrenom   String?
+  guestTelephone String?
+
+  @@map("tickets")
+  @@index([userId])
+  @@index([eventId])
+  @@index([statut])
+  @@index([numeroTicket])
+  @@index([createdAt])
+  @@index([guestEmail])
+}
+
+// Modèle pour les statistiques pré-calculées
+model EventStats {
+  id              String   @id @default(cuid())
+  eventId         String   @unique
+  ticketsSold     Int      @default(0)
+  revenue         Decimal  @db.Decimal(12, 2) @default(0)
+  conversionRate  Float    @default(0)
+  averagePrice    Decimal  @db.Decimal(10, 2) @default(0)
+  peakSalesDay    DateTime?
+  lastUpdated     DateTime @updatedAt
+  
+  // Données pour les graphiques (JSON PostgreSQL)
+  salesByDay      Json?    // [{"date": "2024-01-01", "sales": 10, "revenue": 350}]
+  hourlyStats     Json?    // Statistiques par heure
+  
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("event_stats")
+}
+
+// Modèle pour l'audit et les logs
+model ActivityLog {
+  id        String   @id @default(cuid())
+  type      ActivityType
+  entity    String   // 'user', 'event', 'ticket', 'payment'
+  entityId  String
+  action    String   // 'create', 'update', 'delete', 'validate'
+  oldData   Json?    // Anciennes données (pour les updates)
+  newData   Json?    // Nouvelles données
+  metadata  Json?    // Métadonnées supplémentaires
+  
+  // Informations de l'utilisateur
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  // Informations techniques
+  ipAddress String?
+  userAgent String?
+  
+  createdAt DateTime @default(now())
+
+  @@map("activity_logs")
+  @@index([type])
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// Modèle pour les paiements (tracking Stripe)
+model Payment {
+  id                String   @id @default(cuid())
+  stripePaymentId   String   @unique
+  amount            Decimal  @db.Decimal(10, 2)
+  currency          String   @default("EUR")
+  status            PaymentStatus
+  
+  // Liens
+  eventId           String
+  customerEmail     String
+  customerName      String?
+  
+  // Métadonnées Stripe
+  stripeMetadata    Json?
+  
+  // Remboursements
+  refundedAmount    Decimal? @db.Decimal(10, 2)
+  refundedAt        DateTime?
+  refundReason      String?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("payments")
+  @@index([stripePaymentId])
+  @@index([status])
+  @@index([customerEmail])
+  @@index([eventId])
+  @@index([createdAt])
+}
+
+// Modèle pour les sessions temporaires (panier)
+model TempReservation {
+  id        String   @id @default(cuid())
+  sessionId String   // Session ID ou token temporaire
+  eventId   String
+  quantity  Int
+  userEmail String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("temp_reservations")
+  @@index([sessionId])
+  @@index([eventId])
+  @@index([expiresAt])
+}
+
+// Enums
+enum Role {
+  USER
+  ADMIN
+  MODERATOR
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  BANNED
+  PENDING
+}
+
+enum EventStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  COMPLET
+  ANNULE
+  TERMINE
+}
+
+enum TicketStatus {
+  VALID
+  USED
+  CANCELLED
+  EXPIRED
+}
+
+enum ActivityType {
+  USER_ACTION
+  ADMIN_ACTION
+  SYSTEM_ACTION
+  PAYMENT_ACTION
+  VALIDATION_ACTION
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}

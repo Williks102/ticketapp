@@ -1,0 +1,49 @@
+// app/api/auth/forgot-password/route.ts
+export async function POST(request: NextRequest) {
+  try {
+    const { email } = await request.json()
+    
+    if (!email || !validateEmail(email)) {
+      return createApiError(
+        'INVALID_EMAIL',
+        'Email invalide',
+        400
+      )
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email }
+    })
+
+    // Pour des raisons de sécurité, on retourne toujours un succès
+    // même si l'email n'existe pas
+    
+    if (user) {
+      // Générer un token de réinitialisation
+      const resetToken = generateToken({
+        userId: user.id,
+        email: user.email,
+        role: user.role
+      })
+      
+      // Dans une implémentation complète, on enverrait un email
+      // avec le lien de réinitialisation
+      console.log(`Reset token for ${email}: ${resetToken}`)
+    }
+
+    return createApiResponse(
+      { message: 'Si votre email existe, vous recevrez un lien de réinitialisation' },
+      200
+    )
+
+  } catch (error) {
+    console.error('Erreur lors de la demande de réinitialisation:', error)
+    return createApiError(
+      'INTERNAL_ERROR',
+      'Erreur interne du serveur',
+      500
+    )
+  } finally {
+    await prisma.$disconnect()
+  }
+}
