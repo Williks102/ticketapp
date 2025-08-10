@@ -1,4 +1,5 @@
 // app/api/tickets/purchase/route.ts
+import { NextRequest } from 'next/server'
 import { 
   createApiResponse, 
   createApiError, 
@@ -14,7 +15,13 @@ import {
   generateQRCode
 } from '@/lib/api-utils'
 import prisma from '@/lib/prisma'
-import { PurchaseTicketRequest } from '@/types/api'
+import { 
+  PurchaseTicketRequest,
+  TicketResponse,
+  TicketStatus,  // ← NOUVEAU
+  EventStatus,   // ← NOUVEAU
+  toPrismaNumber // ← NOUVEAU (optionnel)
+} from '@/types/api'
 
 // POST /api/tickets/purchase - Acheter des billets
 export async function POST(request: NextRequest) {

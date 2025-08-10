@@ -1,19 +1,19 @@
-// app/api/events/[id]/route.ts
+import { NextRequest } from 'next/server'
 import { 
   createApiResponse, 
   createApiError, 
   validateRequired,
   authenticateRequest,
-  requireAdmin,
-  comparePassword,
-  generateToken,
-  hashPassword,
-  validateEmail,
-  validatePassword,
-  generateTicketNumber,
-  generateQRCode
+  requireAdmin
 } from '@/lib/api-utils'
 import prisma from '@/lib/prisma'
+import { 
+  EventResponse, 
+  UpdateEventRequest,
+  EventStatus,  // ← NOUVEAU
+  RouteParams,  // ← NOUVEAU (optionnel)
+  toPrismaNumber  // ← NOUVEAU (optionnel)
+} from '@/types/api'
 
 interface RouteParams {
   params: { id: string }
@@ -46,11 +46,10 @@ export async function GET(
       )
     }
 
-    // Calculer les statistiques
-    const ticketsVendus = event.tickets.filter(t => t.statut !== 'CANCELLED').length
-    const revenue = event.tickets
-      .filter(t => t.statut !== 'CANCELLED')
-      .reduce((sum, ticket) => sum + ticket.prix, 0)
+    // Calculer les statistiques avec conversion TypeScript
+    const validTickets = event.tickets.filter(t => t.statut !== 'CANCELLED')
+    const ticketsVendus = validTickets.length
+    const revenue = validTickets.reduce((sum, ticket) => sum + Number(ticket.prix), 0)
 
     const response: EventResponse = {
       id: event.id,
@@ -60,10 +59,10 @@ export async function GET(
       adresse: event.adresse,
       dateDebut: event.dateDebut.toISOString(),
       dateFin: event.dateFin.toISOString(),
-      prix: event.prix,
+      prix: Number(event.prix),
       nbPlaces: event.nbPlaces,
       placesRestantes: event.placesRestantes,
-      statut: event.statut,
+      statut: event.statut as 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE',
       organisateur: event.organisateur,
       image: event.image,
       createdAt: event.createdAt.toISOString(),
@@ -102,7 +101,7 @@ export async function PUT(
       )
     }
 
-    const body = await request.json()
+    const body: UpdateEventRequest = await request.json()
 
     // Vérifier que l'événement existe
     const existingEvent = await prisma.event.findUnique({
@@ -117,84 +116,63 @@ export async function PUT(
       )
     }
 
-    // Préparer les données de mise à jour
-    const updateData: any = {
-      updatedAt: new Date()
-    }
-
-    // Valider et ajouter les champs modifiables
-    if (body.titre) updateData.titre = body.titre
-    if (body.description) updateData.description = body.description
-    if (body.lieu) updateData.lieu = body.lieu
-    if (body.adresse) updateData.adresse = body.adresse
-    if (body.organisateur) updateData.organisateur = body.organisateur
-    if (body.image !== undefined) updateData.image = body.image
-    if (body.statut) updateData.statut = body.statut
-
-    // Validation spéciale pour les dates
+    // Validation des dates si elles sont modifiées
     if (body.dateDebut || body.dateFin) {
       const dateDebut = body.dateDebut ? new Date(body.dateDebut) : existingEvent.dateDebut
       const dateFin = body.dateFin ? new Date(body.dateFin) : existingEvent.dateFin
 
       if (dateFin <= dateDebut) {
         return createApiError(
-          'INVALID_DATE',
+          'VALIDATION_ERROR',
           'La date de fin doit être après la date de début',
           400
         )
       }
-
-      if (body.dateDebut) updateData.dateDebut = dateDebut
-      if (body.dateFin) updateData.dateFin = dateFin
     }
 
-    // Validation du prix
-    if (body.prix !== undefined) {
-      if (body.prix < 0) {
-        return createApiError(
-          'INVALID_PRICE',
-          'Le prix ne peut pas être négatif',
-          400
-        )
-      }
-      updateData.prix = body.prix
-    }
-
-    // Validation du nombre de places
+    // Préparer les données de mise à jour
+    const updateData: any = {}
+    if (body.titre !== undefined) updateData.titre = body.titre
+    if (body.description !== undefined) updateData.description = body.description
+    if (body.lieu !== undefined) updateData.lieu = body.lieu
+    if (body.adresse !== undefined) updateData.adresse = body.adresse
+    if (body.dateDebut !== undefined) updateData.dateDebut = new Date(body.dateDebut)
+    if (body.dateFin !== undefined) updateData.dateFin = new Date(body.dateFin)
+    if (body.prix !== undefined) updateData.prix = body.prix
     if (body.nbPlaces !== undefined) {
-      if (body.nbPlaces < 1) {
-        return createApiError(
-          'INVALID_PLACES',
-          'Le nombre de places doit être supérieur à 0',
-          400
-        )
-      }
-
-      // Vérifier qu'on ne réduit pas en dessous des billets déjà vendus
-      const soldTickets = await prisma.ticket.count({
-        where: {
+      updateData.nbPlaces = body.nbPlaces
+      // Recalculer les places restantes
+      const ticketsVendus = await prisma.ticket.count({
+        where: { 
           eventId: params.id,
           statut: { not: 'CANCELLED' }
         }
       })
-
-      if (body.nbPlaces < soldTickets) {
-        return createApiError(
-          'INVALID_PLACES',
-          `Impossible de réduire à ${body.nbPlaces} places car ${soldTickets} billets ont déjà été vendus`,
-          400
-        )
-      }
-
-      updateData.nbPlaces = body.nbPlaces
-      updateData.placesRestantes = body.nbPlaces - soldTickets
+      updateData.placesRestantes = body.nbPlaces - ticketsVendus
     }
+    if (body.organisateur !== undefined) updateData.organisateur = body.organisateur
+    if (body.image !== undefined) updateData.image = body.image
+    if (body.statut !== undefined) updateData.statut = body.statut
 
     // Mettre à jour l'événement
     const updatedEvent = await prisma.event.update({
       where: { id: params.id },
-      data: updateData
+      data: updateData,
+      include: {
+        tickets: {
+          select: {
+            id: true,
+            prix: true,
+            statut: true
+          }
+        }
+      }
     })
+
+    // Calculer les statistiques
+    const validTickets = updatedEvent.tickets.filter(t => t.statut !== 'CANCELLED')
+    const ticketsVendus = validTickets.length
+    const revenue = validTickets.reduce((sum, ticket) => sum + Number(ticket.prix), 0)
 
     const response: EventResponse = {
       id: updatedEvent.id,
@@ -204,17 +182,19 @@ export async function PUT(
       adresse: updatedEvent.adresse,
       dateDebut: updatedEvent.dateDebut.toISOString(),
       dateFin: updatedEvent.dateFin.toISOString(),
-      prix: updatedEvent.prix,
+      prix: Number(updatedEvent.prix),
       nbPlaces: updatedEvent.nbPlaces,
       placesRestantes: updatedEvent.placesRestantes,
-      statut: updatedEvent.statut,
+      statut: updatedEvent.statut as 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE',
       organisateur: updatedEvent.organisateur,
       image: updatedEvent.image,
       createdAt: updatedEvent.createdAt.toISOString(),
-      updatedAt: updatedEvent.updatedAt.toISOString()
+      updatedAt: updatedEvent.updatedAt.toISOString(),
+      ticketsVendus,
+      revenue
     }
 
-    return createApiResponse(response, 200, 'Événement mis à jour avec succès')
+    return createApiResponse(response)
 
   } catch (error) {
     console.error('Erreur lors de la mise à jour de l\'événement:', error)
@@ -245,16 +225,14 @@ export async function DELETE(
     }
 
     // Vérifier que l'événement existe
-    const existingEvent = await prisma.event.findUnique({
+    const event = await prisma.event.findUnique({
       where: { id: params.id },
       include: {
-        tickets: {
-          where: { statut: { not: 'CANCELLED' } }
-        }
+        tickets: true
       }
     })
 
-    if (!existingEvent) {
+    if (!event) {
       return createApiError(
         'EVENT_NOT_FOUND',
         'Événement non trouvé',
@@ -262,24 +240,22 @@ export async function DELETE(
       )
     }
 
-    // Vérifier qu'il n'y a pas de billets vendus
-    if (existingEvent.tickets.length > 0) {
+    // Vérifier s'il y a des billets vendus
+    const activeTickets = event.tickets.filter(t => t.statut !== 'CANCELLED')
+    if (activeTickets.length > 0) {
       return createApiError(
-        'CANNOT_DELETE',
+        'CONFLICT',
         'Impossible de supprimer un événement avec des billets vendus',
-        400
+        409
       )
     }
 
-    // Supprimer l'événement (les billets annulés seront supprimés en cascade)
+    // Supprimer l'événement (les billets seront supprimés en cascade)
     await prisma.event.delete({
       where: { id: params.id }
     })
 
-    return createApiResponse(
-      { message: 'Événement supprimé avec succès' },
-      200
-    )
+    return createApiResponse({ message: 'Événement supprimé avec succès' })
 
   } catch (error) {
     console.error('Erreur lors de la suppression de l\'événement:', error)

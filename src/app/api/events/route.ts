@@ -6,15 +6,14 @@ import {
   authenticateRequest,
   requireAdmin,
   getPaginationParams,
-  createPaginationMeta,
-  validateRequired,
-  extractQueryParams
+  validateRequired
 } from '@/lib/api-utils'
 import {
   CreateEventRequest,
   EventsListResponse,
-  EventsQueryParams,
-  EventResponse
+  EventResponse,
+  EventStatus,  // ← NOUVEAU
+  toPrismaNumber  // ← NOUVEAU (optionnel)
 } from '@/types/api'
 
 const prisma = new PrismaClient()
@@ -58,9 +57,21 @@ export async function GET(request: NextRequest) {
     // Ordre de tri
     const sortBy = searchParams.get('sortBy') || 'dateDebut'
     const sortOrder = searchParams.get('sortOrder') || 'asc'
-    
-    const orderBy: any = {}
-    orderBy[sortBy] = sortOrder
+
+    let orderBy: any = {}
+    switch (sortBy) {
+      case 'title':
+        orderBy.titre = sortOrder
+        break
+      case 'price':
+        orderBy.prix = sortOrder
+        break
+      case 'revenue':
+        orderBy.dateDebut = sortOrder
+        break
+      default:
+        orderBy.dateDebut = sortOrder
+    }
 
     // Récupérer les événements avec pagination
     const [events, total] = await Promise.all([
@@ -82,12 +93,11 @@ export async function GET(request: NextRequest) {
       prisma.event.count({ where })
     ])
 
-    // Transformer les données pour inclure les statistiques
-    const eventsWithStats: EventResponse[] = events.map(event => {
-      const ticketsVendus = event.tickets.filter(t => t.statut !== 'CANCELLED').length
-      const revenue = event.tickets
-        .filter(t => t.statut !== 'CANCELLED')
-        .reduce((sum, ticket) => sum + ticket.prix, 0)
+    // Transformer les données avec corrections TypeScript
+    const eventsResponse: EventResponse[] = events.map(event => {
+      const validTickets = event.tickets.filter(t => t.statut !== 'CANCELLED')
+      const ticketsVendus = validTickets.length
+      const revenue = validTickets.reduce((sum, ticket) => sum + Number(ticket.prix), 0)
 
       return {
         id: event.id,
@@ -97,10 +107,10 @@ export async function GET(request: NextRequest) {
         adresse: event.adresse,
         dateDebut: event.dateDebut.toISOString(),
         dateFin: event.dateFin.toISOString(),
-        prix: event.prix,
+        prix: Number(event.prix),
         nbPlaces: event.nbPlaces,
         placesRestantes: event.placesRestantes,
-        statut: event.statut,
+        statut: event.statut as 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE',
         organisateur: event.organisateur,
         image: event.image,
         createdAt: event.createdAt.toISOString(),
@@ -111,7 +121,7 @@ export async function GET(request: NextRequest) {
     })
 
     const response: EventsListResponse = {
-      events: eventsWithStats,
+      events: eventsResponse,
       total,
       page,
       totalPages: Math.ceil(total / limit)
@@ -148,7 +158,7 @@ export async function POST(request: NextRequest) {
 
     // Validation des champs requis
     const requiredFields = [
-      'titre', 'description', 'lieu', 'adresse',
+      'titre', 'description', 'lieu', 'adresse', 
       'dateDebut', 'dateFin', 'prix', 'nbPlaces', 'organisateur'
     ]
     const validationErrors = validateRequired(body, requiredFields)
@@ -169,7 +179,7 @@ export async function POST(request: NextRequest) {
 
     if (dateDebut <= now) {
       return createApiError(
-        'INVALID_DATE',
+        'VALIDATION_ERROR',
         'La date de début doit être dans le futur',
         400
       )
@@ -177,25 +187,8 @@ export async function POST(request: NextRequest) {
 
     if (dateFin <= dateDebut) {
       return createApiError(
-        'INVALID_DATE',
+        'VALIDATION_ERROR',
         'La date de fin doit être après la date de début',
-        400
-      )
-    }
-
-    // Validation du prix et du nombre de places
-    if (body.prix < 0) {
-      return createApiError(
-        'INVALID_PRICE',
-        'Le prix ne peut pas être négatif',
-        400
-      )
-    }
-
-    if (body.nbPlaces < 1) {
-      return createApiError(
-        'INVALID_PLACES',
-        'Le nombre de places doit être supérieur à 0',
         400
       )
     }
@@ -226,17 +219,19 @@ export async function POST(request: NextRequest) {
       adresse: event.adresse,
       dateDebut: event.dateDebut.toISOString(),
       dateFin: event.dateFin.toISOString(),
-      prix: event.prix,
+      prix: Number(event.prix),
       nbPlaces: event.nbPlaces,
       placesRestantes: event.placesRestantes,
-      statut: event.statut,
+      statut: event.statut as 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE',
       organisateur: event.organisateur,
       image: event.image,
       createdAt: event.createdAt.toISOString(),
-      updatedAt: event.updatedAt.toISOString()
+      updatedAt: event.updatedAt.toISOString(),
+      ticketsVendus: 0,
+      revenue: 0
     }
 
-    return createApiResponse(response, 201, 'Événement créé avec succès')
+    return createApiResponse(response, 201)
 
   } catch (error) {
     console.error('Erreur lors de la création de l\'événement:', error)

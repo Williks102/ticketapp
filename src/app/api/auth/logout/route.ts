@@ -14,6 +14,10 @@ import {
   generateQRCode
 } from '@/lib/api-utils'
 import prisma from '@/lib/prisma'
+import { NextRequest } from 'next/server'
+import { EventResponse, TicketResponse } from '@/types/api' 
+
+
 export async function POST(request: NextRequest) {
   try {
     const user = await authenticateRequest(request)

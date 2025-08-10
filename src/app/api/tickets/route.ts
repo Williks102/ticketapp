@@ -9,7 +9,12 @@ import {
   getPaginationParams,
   validateRequired
 } from '@/lib/api-utils'
-import { TicketResponse } from '@/types/api'
+import { 
+  TicketResponse,
+  TicketStatus,  // ← NOUVEAU
+  UserRole,      // ← NOUVEAU
+  toPrismaNumber // ← NOUVEAU (optionnel)
+} from '@/types/api'
 
 const prisma = new PrismaClient()
 

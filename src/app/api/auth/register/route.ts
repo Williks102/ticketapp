@@ -1,5 +1,7 @@
 // app/api/auth/register/route.ts
+import { RegisterRequest, AuthResponse } from '@/types/api'
 import { NextRequest } from 'next/server'
+import { EventResponse, TicketResponse } from '@/types/api' 
 import { PrismaClient } from '@prisma/client'
 import { 
   createApiResponse, 
@@ -10,7 +12,8 @@ import {
   generateToken,
   validateRequired 
 } from '@/lib/api-utils'
-import { RegisterRequest, AuthResponse } from '@/types/api'
+
+
 
 const prisma = new PrismaClient()
 

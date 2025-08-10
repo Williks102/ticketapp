@@ -1,4 +1,18 @@
-// Types pour l'authentification
+// src/types/api.ts - VERSION CORRIGÉE
+
+// =============================================================================
+// TYPES STRICTS POUR LES STATUTS
+// =============================================================================
+
+export type EventStatus = 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE'
+export type TicketStatus = 'VALID' | 'USED' | 'CANCELLED'
+export type UserRole = 'USER' | 'ADMIN'
+export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'BANNED'
+
+// =============================================================================
+// TYPES POUR L'AUTHENTIFICATION
+// =============================================================================
+
 export interface LoginRequest {
   email: string
   password: string
@@ -19,12 +33,15 @@ export interface AuthResponse {
     email: string
     nom: string
     prenom: string
-    role: 'USER' | 'ADMIN'
+    role: UserRole
   }
   token: string
 }
 
-// Types pour les événements
+// =============================================================================
+// TYPES POUR LES ÉVÉNEMENTS
+// =============================================================================
+
 export interface CreateEventRequest {
   titre: string
   description: string
@@ -40,7 +57,7 @@ export interface CreateEventRequest {
 }
 
 export interface UpdateEventRequest extends Partial<CreateEventRequest> {
-  statut?: 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE'
+  statut?: EventStatus
 }
 
 export interface EventResponse {
@@ -54,9 +71,9 @@ export interface EventResponse {
   prix: number
   nbPlaces: number
   placesRestantes: number
-  statut: 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE'
+  statut: EventStatus
   organisateur: string
-  image?: string
+  image?: string | null
   createdAt: string
   updatedAt: string
   ticketsVendus?: number
@@ -82,7 +99,10 @@ export interface EventsQueryParams {
   dateTo?: string
 }
 
-// Types pour les billets
+// =============================================================================
+// TYPES POUR LES BILLETS
+// =============================================================================
+
 export interface PurchaseTicketRequest {
   eventId: string
   quantity: number
@@ -101,7 +121,7 @@ export interface TicketResponse {
   id: string
   numeroTicket: string
   qrCode: string
-  statut: 'VALID' | 'USED' | 'CANCELLED'
+  statut: TicketStatus
   prix: number
   createdAt: string
   event: {
@@ -118,10 +138,10 @@ export interface TicketResponse {
     email: string
   }
   guestInfo?: {
-    email: string
-    nom: string
-    prenom: string
-    telephone?: string
+    email: string | null
+    nom: string | null
+    prenom: string | null
+    telephone?: string | null
   }
 }
 
@@ -137,17 +157,20 @@ export interface ValidateTicketResponse {
   scannedAt?: string
 }
 
-// Types pour les utilisateurs
+// =============================================================================
+// TYPES POUR LES UTILISATEURS
+// =============================================================================
+
 export interface UserResponse {
   id: string
   email: string
   nom: string
   prenom: string
-  telephone?: string
-  role: 'USER' | 'ADMIN'
-  statut: 'ACTIVE' | 'INACTIVE' | 'BANNED'
+  telephone?: string | null
+  role: UserRole
+  statut: UserStatus
   createdAt: string
-  lastLogin?: string
+  lastLogin?: string | null
   ticketsAchetes: number
   totalDepense: number
 }
@@ -163,8 +186,8 @@ export interface UsersQueryParams {
   page?: number
   limit?: number
   search?: string
-  role?: 'USER' | 'ADMIN'
-  status?: 'ACTIVE' | 'INACTIVE' | 'BANNED'
+  role?: UserRole
+  status?: UserStatus
   sortBy?: 'created' | 'name' | 'email' | 'spent' | 'tickets'
   sortOrder?: 'asc' | 'desc'
 }
@@ -172,12 +195,15 @@ export interface UsersQueryParams {
 export interface UpdateUserRequest {
   nom?: string
   prenom?: string
-  telephone?: string
-  role?: 'USER' | 'ADMIN'
-  statut?: 'ACTIVE' | 'INACTIVE' | 'BANNED'
+  telephone?: string | null
+  role?: UserRole
+  statut?: UserStatus
 }
 
-// Types pour les paiements
+// =============================================================================
+// TYPES POUR LES PAIEMENTS
+// =============================================================================
+
 export interface CreatePaymentIntentRequest {
   eventId: string
   quantity: number
@@ -207,7 +233,10 @@ export interface PaymentWebhookPayload {
   }
 }
 
-// Types pour les statistiques et dashboard
+// =============================================================================
+// TYPES POUR LES STATISTIQUES ET DASHBOARD
+// =============================================================================
+
 export interface DashboardStats {
   totalEvents: number
   totalTickets: number
@@ -243,7 +272,10 @@ export interface DashboardResponse {
   topEvents: TopEvent[]
 }
 
-// Types pour les rapports
+// =============================================================================
+// TYPES POUR LES RAPPORTS
+// =============================================================================
+
 export interface SalesReport {
   period: 'day' | 'week' | 'month' | 'year'
   startDate: string
@@ -273,7 +305,10 @@ export interface EventAnalytics {
   refundRate?: number
 }
 
-// Types pour les erreurs API
+// =============================================================================
+// TYPES POUR LES ERREURS API
+// =============================================================================
+
 export interface ApiError {
   error: string
   message: string
@@ -281,7 +316,10 @@ export interface ApiError {
   details?: any
 }
 
-// Types pour les réponses génériques
+// =============================================================================
+// TYPES POUR LES RÉPONSES GÉNÉRIQUES
+// =============================================================================
+
 export interface ApiResponse<T> {
   success: boolean
   data?: T
@@ -289,7 +327,10 @@ export interface ApiResponse<T> {
   message?: string
 }
 
-// Types pour la pagination
+// =============================================================================
+// TYPES POUR LA PAGINATION
+// =============================================================================
+
 export interface PaginationParams {
   page?: number
   limit?: number
@@ -307,7 +348,10 @@ export interface PaginatedResponse<T> {
   }
 }
 
-// Types pour les filtres
+// =============================================================================
+// TYPES POUR LES FILTRES
+// =============================================================================
+
 export interface DateRange {
   from?: string
   to?: string
@@ -318,7 +362,10 @@ export interface SortOptions {
   order: 'asc' | 'desc'
 }
 
-// Types pour l'upload de fichiers
+// =============================================================================
+// TYPES POUR L'UPLOAD DE FICHIERS
+// =============================================================================
+
 export interface FileUploadResponse {
   url: string
   filename: string
@@ -326,7 +373,10 @@ export interface FileUploadResponse {
   mimeType: string
 }
 
-// Types pour les notifications
+// =============================================================================
+// TYPES POUR LES NOTIFICATIONS
+// =============================================================================
+
 export interface NotificationResponse {
   id: string
   type: 'info' | 'success' | 'warning' | 'error'
@@ -337,7 +387,10 @@ export interface NotificationResponse {
   userId: string
 }
 
-// Types pour l'export de données
+// =============================================================================
+// TYPES POUR L'EXPORT DE DONNÉES
+// =============================================================================
+
 export interface ExportRequest {
   type: 'events' | 'users' | 'tickets' | 'sales'
   format: 'csv' | 'excel' | 'pdf'
@@ -349,4 +402,89 @@ export interface ExportResponse {
   downloadUrl: string
   filename: string
   expiresAt: string
+}
+
+// =============================================================================
+// UTILITAIRES DE TYPE
+// =============================================================================
+
+// Type guard pour vérifier les statuts
+export function isValidEventStatus(status: string): status is EventStatus {
+  return ['ACTIVE', 'INACTIVE', 'COMPLET', 'ANNULE'].includes(status)
+}
+
+export function isValidTicketStatus(status: string): status is TicketStatus {
+  return ['VALID', 'USED', 'CANCELLED'].includes(status)
+}
+
+export function isValidUserRole(role: string): role is UserRole {
+  return ['USER', 'ADMIN'].includes(role)
+}
+
+export function isValidUserStatus(status: string): status is UserStatus {
+  return ['ACTIVE', 'INACTIVE', 'BANNED'].includes(status)
+}
+
+// Utilitaire pour la conversion Prisma Decimal vers number
+export type PrismaDecimal = {
+  toString(): string
+  toNumber(): number
+}
+
+export function toPrismaNumber(value: PrismaDecimal | number): number {
+  return typeof value === 'number' ? value : Number(value.toString())
+}
+
+// Types pour les paramètres de route Next.js
+export interface RouteParams<T = Record<string, string>> {
+  params: T
+}
+
+// Types pour les réponses d'API avec metadata
+export interface ApiResponseWithMeta<T> extends ApiResponse<T> {
+  meta?: {
+    timestamp: string
+    version: string
+    requestId: string
+  }
+}
+
+// Types pour la validation des formulaires
+export interface FormValidationError {
+  field: string
+  message: string
+  code?: string
+}
+
+export interface ValidationResponse {
+  isValid: boolean
+  errors: FormValidationError[]
+}
+
+// Types pour les webhooks
+export interface WebhookPayload<T = any> {
+  id: string
+  type: string
+  created: number
+  data: T
+  livemode: boolean
+}
+
+// Types pour les sessions utilisateur
+export interface UserSession {
+  userId: string
+  email: string
+  role: UserRole
+  iat: number
+  exp: number
+}
+
+// Types pour les réponses de recherche
+export interface SearchResponse<T> {
+  results: T[]
+  query: string
+  total: number
+  page: number
+  totalPages: number
+  facets?: Record<string, Array<{ value: string; count: number }>>
 }
