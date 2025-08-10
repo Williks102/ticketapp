@@ -1,4 +1,5 @@
 // app/api/tickets/[id]/pdf/route.ts
+import { NextRequest } from 'next/server'
 import { 
   createApiResponse, 
   createApiError, 

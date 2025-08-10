@@ -1,4 +1,3 @@
-// app/api/tickets/route.ts
 import { NextRequest } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import {
@@ -6,19 +5,12 @@ import {
   createApiError,
   authenticateRequest,
   requireAdmin,
-  getPaginationParams,
-  validateRequired
+  getPaginationParams
 } from '@/lib/api-utils'
-import { 
-  TicketResponse,
-  TicketStatus,  // ← NOUVEAU
-  UserRole,      // ← NOUVEAU
-  toPrismaNumber // ← NOUVEAU (optionnel)
-} from '@/types/api'
+import { TicketResponse, TicketStatus } from '@/types/api'
 
 const prisma = new PrismaClient()
 
-// GET /api/tickets - Récupérer la liste des billets
 export async function GET(request: NextRequest) {
   try {
     const user = await authenticateRequest(request)
@@ -90,13 +82,13 @@ export async function GET(request: NextRequest) {
       prisma.ticket.count({ where })
     ])
 
-    // Transformer les données
+    // Transformer les données avec conversion de types appropriée
     const ticketsResponse: TicketResponse[] = tickets.map(ticket => ({
       id: ticket.id,
       numeroTicket: ticket.numeroTicket,
       qrCode: ticket.qrCode,
-      statut: ticket.statut,
-      prix: ticket.prix,
+      statut: ticket.statut as TicketStatus,  // Cast vers notre type
+      prix: Number(ticket.prix),  // Conversion Decimal vers number
       createdAt: ticket.createdAt.toISOString(),
       event: {
         id: ticket.event.id,
@@ -115,7 +107,7 @@ export async function GET(request: NextRequest) {
         email: ticket.guestEmail || '',
         nom: ticket.guestNom || '',
         prenom: ticket.guestPrenom || '',
-        telephone: ticket.guestTelephone
+        telephone: ticket.guestTelephone || undefined
       } : undefined
     }))
 

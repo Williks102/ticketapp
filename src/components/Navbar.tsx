@@ -1,4 +1,4 @@
-'use client'
+'use client'  // IMPORTANT: Ajouter cette directive
 
 import Link from 'next/link'
 import { useState } from 'react'
@@ -13,41 +13,41 @@ export function Navbar() {
         <div className="flex justify-between items-center py-4">
           {/* Logo */}
           <Link href="/" className="flex items-center space-x-2">
-            <div className="bg-primary-600 text-white p-2 rounded-lg">
+            <div className="bg-blue-600 text-white p-2 rounded-lg">
               <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 2L3 7v11a1 1 0 001 1h3v-6h6v6h3a1 1 0 001-1V7l-7-5zM6 18v-6h8v6H6z" clipRule="evenodd" />
               </svg>
             </div>
-            <span className="text-xl font-bold text-gray-800">Simple Billet</span>
+            <span className="text-xl font-bold text-gray-800">ClicBillet</span>
           </Link>
 
           {/* Menu desktop */}
           <div className="hidden md:flex items-center space-x-6">
-            <Link href="/evenements" className="text-gray-600 hover:text-primary-600 transition-colors">
+            <Link href="/evenements" className="text-gray-600 hover:text-blue-600 transition-colors">
               Événements
             </Link>
-            <Link href="/a-propos" className="text-gray-600 hover:text-primary-600 transition-colors">
+            <Link href="/a-propos" className="text-gray-600 hover:text-blue-600 transition-colors">
               À propos
             </Link>
-            <Link href="/contact" className="text-gray-600 hover:text-primary-600 transition-colors">
+            <Link href="/contact" className="text-gray-600 hover:text-blue-600 transition-colors">
               Contact
             </Link>
             
             {isLoggedIn ? (
               <div className="flex items-center space-x-4">
-                <Link href="/dashboard" className="text-gray-600 hover:text-primary-600 transition-colors">
+                <Link href="/dashboard" className="text-gray-600 hover:text-blue-600 transition-colors">
                   Mon espace
                 </Link>
-                <button className="btn-secondary">
+                <button className="bg-white hover:bg-gray-50 text-blue-600 font-medium px-4 py-2 rounded-lg border border-blue-600 transition-colors">
                   Déconnexion
                 </button>
               </div>
             ) : (
               <div className="flex items-center space-x-4">
-                <Link href="/auth/login" className="text-gray-600 hover:text-primary-600 transition-colors">
+                <Link href="/auth/login" className="text-gray-600 hover:text-blue-600 transition-colors">
                   Connexion
                 </Link>
-                <Link href="/auth/register" className="btn-primary">
+                <Link href="/auth/register" className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition-colors">
                   Inscription
                 </Link>
               </div>
@@ -69,31 +69,31 @@ export function Navbar() {
         {isMenuOpen && (
           <div className="md:hidden pb-4">
             <div className="flex flex-col space-y-2">
-              <Link href="/evenements" className="block py-2 text-gray-600 hover:text-primary-600">
+              <Link href="/evenements" className="block py-2 text-gray-600 hover:text-blue-600">
                 Événements
               </Link>
-              <Link href="/a-propos" className="block py-2 text-gray-600 hover:text-primary-600">
+              <Link href="/a-propos" className="block py-2 text-gray-600 hover:text-blue-600">
                 À propos
               </Link>
-              <Link href="/contact" className="block py-2 text-gray-600 hover:text-primary-600">
+              <Link href="/contact" className="block py-2 text-gray-600 hover:text-blue-600">
                 Contact
               </Link>
               
               {isLoggedIn ? (
                 <>
-                  <Link href="/dashboard" className="block py-2 text-gray-600 hover:text-primary-600">
+                  <Link href="/dashboard" className="block py-2 text-gray-600 hover:text-blue-600">
                     Mon espace
                   </Link>
-                  <button className="text-left py-2 text-gray-600 hover:text-primary-600">
+                  <button className="text-left py-2 text-gray-600 hover:text-blue-600">
                     Déconnexion
                   </button>
                 </>
               ) : (
                 <>
-                  <Link href="/auth/login" className="block py-2 text-gray-600 hover:text-primary-600">
+                  <Link href="/auth/login" className="block py-2 text-gray-600 hover:text-blue-600">
                     Connexion
                   </Link>
-                  <Link href="/auth/register" className="block py-2 text-primary-600 font-medium">
+                  <Link href="/auth/register" className="block py-2 text-blue-600 font-medium">
                     Inscription
                   </Link>
                 </>

@@ -1,3 +1,5 @@
+// src/app/api/tickets/validate/route.ts - VERSION CORRIGÉE
+
 import { NextRequest } from 'next/server'
 import { 
   createApiResponse, 
@@ -6,15 +8,8 @@ import {
   requireAdmin
 } from '@/lib/api-utils'
 import prisma from '@/lib/prisma'
-import { 
-  ValidateTicketRequest, 
-  ValidateTicketResponse, 
-  TicketResponse,
-  TicketStatus,  // ← NOUVEAU
-  toPrismaNumber  // ← NOUVEAU (optionnel)
-} from '@/types/api'
+import { ValidateTicketRequest, ValidateTicketResponse, TicketResponse, TicketStatus } from '@/types/api'
 
-// POST /api/tickets/validate - Valider un billet
 export async function POST(request: NextRequest) {
   try {
     const user = await authenticateRequest(request)
@@ -69,13 +64,13 @@ export async function POST(request: NextRequest) {
       return createApiResponse(response)
     }
 
-    // Fonction helper pour créer la réponse ticket
+    // Fonction helper pour créer la réponse ticket avec types corrects
     const createTicketResponse = (ticketData: typeof ticket): TicketResponse => ({
       id: ticketData.id,
       numeroTicket: ticketData.numeroTicket,
       qrCode: ticketData.qrCode,
-      statut: ticketData.statut as 'VALID' | 'USED' | 'CANCELLED',
-      prix: Number(ticketData.prix),
+      statut: ticketData.statut as TicketStatus,  // Cast approprié
+      prix: Number(ticketData.prix),  // Conversion Decimal
       createdAt: ticketData.createdAt.toISOString(),
       event: {
         id: ticketData.event.id,
@@ -108,6 +103,16 @@ export async function POST(request: NextRequest) {
       return createApiResponse(response)
     }
 
+    // Vérifier le statut du billet - EXPIRÉ
+    if (ticket.statut === 'EXPIRED') {
+      const response: ValidateTicketResponse = {
+        success: false,
+        ticket: createTicketResponse(ticket),
+        message: 'Ce billet a expiré et ne peut plus être utilisé.'
+      }
+      return createApiResponse(response)
+    }
+
     // Vérifier le statut du billet - DÉJÀ UTILISÉ
     if (ticket.statut === 'USED') {
       const response: ValidateTicketResponse = {
@@ -118,7 +123,7 @@ export async function POST(request: NextRequest) {
       return createApiResponse(response)
     }
 
-    // Vérifier la date de l'événement (optionnel, selon la politique)
+    // Vérifier la date de l'événement
     const now = new Date()
     const eventDate = ticket.event.dateDebut
     const timeDiff = Math.abs(now.getTime() - eventDate.getTime())
@@ -191,4 +196,3 @@ export async function POST(request: NextRequest) {
   } finally {
     await prisma.$disconnect()
   }
-}

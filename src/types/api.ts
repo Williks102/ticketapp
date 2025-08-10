@@ -5,7 +5,7 @@
 // =============================================================================
 
 export type EventStatus = 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE'
-export type TicketStatus = 'VALID' | 'USED' | 'CANCELLED'
+export type TicketStatus = 'VALID' | 'USED' | 'CANCELLED' | 'EXPIRED'  // ← AJOUTER 'EXPIRED'
 export type UserRole = 'USER' | 'ADMIN'
 export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'BANNED'
 
@@ -121,7 +121,7 @@ export interface TicketResponse {
   id: string
   numeroTicket: string
   qrCode: string
-  statut: TicketStatus
+  statut: TicketStatus  // Maintenant compatible avec Prisma
   prix: number
   createdAt: string
   event: {
@@ -143,18 +143,6 @@ export interface TicketResponse {
     prenom: string | null
     telephone?: string | null
   }
-}
-
-export interface ValidateTicketRequest {
-  ticketCode: string
-  eventId?: string
-}
-
-export interface ValidateTicketResponse {
-  success: boolean
-  ticket?: TicketResponse
-  message: string
-  scannedAt?: string
 }
 
 // =============================================================================
@@ -409,13 +397,14 @@ export interface ExportResponse {
 // =============================================================================
 
 // Type guard pour vérifier les statuts
+export function isValidTicketStatus(status: string): status is TicketStatus {
+  return ['VALID', 'USED', 'CANCELLED', 'EXPIRED'].includes(status)
+}
+
 export function isValidEventStatus(status: string): status is EventStatus {
   return ['ACTIVE', 'INACTIVE', 'COMPLET', 'ANNULE'].includes(status)
 }
 
-export function isValidTicketStatus(status: string): status is TicketStatus {
-  return ['VALID', 'USED', 'CANCELLED'].includes(status)
-}
 
 export function isValidUserRole(role: string): role is UserRole {
   return ['USER', 'ADMIN'].includes(role)
@@ -487,4 +476,20 @@ export interface SearchResponse<T> {
   page: number
   totalPages: number
   facets?: Record<string, Array<{ value: string; count: number }>>
+}
+
+// Type pour la conversion Prisma → API
+export function mapTicketStatus(prismaStatus: string): TicketStatus {
+  switch (prismaStatus) {
+    case 'VALID':
+      return 'VALID'
+    case 'USED':
+      return 'USED'
+    case 'CANCELLED':
+      return 'CANCELLED'
+    case 'EXPIRED':
+      return 'EXPIRED'
+    default:
+      return 'CANCELLED' // Fallback sécurisé
+  }
 }
