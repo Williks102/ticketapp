@@ -41,7 +41,7 @@ model Event {
   adresse     String
   dateDebut   DateTime
   dateFin     DateTime
-  prix        Decimal  @db.Decimal(10, 2)
+  prix        Int  
   nbPlaces    Int
   placesRestantes Int
   image       String?
@@ -73,7 +73,7 @@ model Ticket {
   numeroTicket String     @unique
   qrCode      String      // Base64 du QR code
   statut      TicketStatus @default(VALID)
-  prix        Decimal     @db.Decimal(10, 2)
+  prix        Int
   
   // Informations de validation
   validatedAt DateTime?
@@ -109,9 +109,9 @@ model EventStats {
   id              String   @id @default(cuid())
   eventId         String   @unique
   ticketsSold     Int      @default(0)
-  revenue         Decimal  @db.Decimal(12, 2) @default(0)
+  revenue         Int      @default(0)
   conversionRate  Float    @default(0)
-  averagePrice    Decimal  @db.Decimal(10, 2) @default(0)
+  averagePrice    Int      @default(0)
   peakSalesDay    DateTime?
   lastUpdated     DateTime @updatedAt
   
@@ -156,8 +156,8 @@ model ActivityLog {
 model Payment {
   id                String   @id @default(cuid())
   stripePaymentId   String   @unique
-  amount            Decimal  @db.Decimal(10, 2)
-  currency          String   @default("EUR")
+  amount            Int
+  currency          String   @default("XOF")
   status            PaymentStatus
   
   // Liens

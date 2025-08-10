@@ -12,11 +12,11 @@ export default function HomePage() {
       {/* Contenu principal */}
       <main className="flex-1">
         {/* Hero Section */}
-        <section className="bg-gradient-to-br from-blue-50 to-indigo-100 py-20">
+        <section className="bg-gradient-to-br from-orange-50 to-white-100 py-20">
           <div className="container mx-auto px-4 text-center">
             <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
               Découvrez vos prochains
-              <span className="text-blue-600 block">événements</span>
+              <span className="text-orange-600 block">événements</span>
             </h1>
             <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
               Réservez vos billets en toute simplicité pour les concerts, spectacles, 
@@ -26,13 +26,13 @@ export default function HomePage() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <a 
                 href="/evenements" 
-                className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-8 py-3 rounded-lg transition-colors text-lg"
+                className="bg-orange-600 hover:bg-orange-700 text-white font-medium px-8 py-3 rounded-lg transition-colors text-lg"
               >
                 Voir les événements
               </a>
               <a 
                 href="/admin/events/new" 
-                className="bg-white hover:bg-gray-50 text-blue-600 font-medium px-8 py-3 rounded-lg border border-blue-600 transition-colors text-lg"
+                className="bg-white hover:bg-gray-50 text-orange-600 font-medium px-8 py-3 rounded-lg border border-orange-600 transition-colors text-lg"
               >
                 Organiser un événement
               </a>
@@ -51,7 +51,7 @@ export default function HomePage() {
                       type="text"
                       name="search"
                       placeholder="Rechercher un événement..."
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-orange-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
                   <div className="flex-1">
@@ -59,13 +59,13 @@ export default function HomePage() {
                       type="text"
                       name="lieu"
                       placeholder="Ville ou lieu..."
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-orange-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
                   <div className="flex-1">
                     <select 
                       name="category"
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-orange-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="">Toutes catégories</option>
                       <option value="concerts">Concerts</option>
@@ -76,7 +76,7 @@ export default function HomePage() {
                   </div>
                   <button
                     type="submit"
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-8 py-3 rounded-lg transition-colors whitespace-nowrap"
+                    className="bg-orange-600 hover:bg-orange-700 text-white font-medium px-8 py-3 rounded-lg transition-colors whitespace-nowrap"
                   >
                     Rechercher
                   </button>
@@ -97,7 +97,7 @@ export default function HomePage() {
             </p>
             <a 
               href="/admin/events/new" 
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-3 rounded-lg transition-colors"
+              className="bg-orange-600 hover:bg-blue-700 text-white font-medium px-6 py-3 rounded-lg transition-colors"
             >
               Créer votre premier événement
             </a>

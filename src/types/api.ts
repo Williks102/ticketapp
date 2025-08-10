@@ -1,13 +1,13 @@
 // src/types/api.ts - VERSION CORRIGÉE
 
 // =============================================================================
-// TYPES STRICTS POUR LES STATUTS
+// TYPES STRICTS POUR LES STATUTS (synchronisés avec Prisma)
 // =============================================================================
 
-export type EventStatus = 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE'
-export type TicketStatus = 'VALID' | 'USED' | 'CANCELLED' | 'EXPIRED'  // ← AJOUTER 'EXPIRED'
-export type UserRole = 'USER' | 'ADMIN'
-export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'BANNED'
+export type EventStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE' | 'TERMINE'
+export type TicketStatus = 'VALID' | 'USED' | 'CANCELLED' | 'EXPIRED'
+export type UserRole = 'USER' | 'ADMIN' | 'MODERATOR'
+export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'BANNED' | 'PENDING'
 
 // =============================================================================
 // TYPES POUR L'AUTHENTIFICATION
@@ -117,12 +117,33 @@ export interface PurchaseTicketRequest {
   guestPurchase?: boolean
 }
 
+// =============================================================================
+// TYPES POUR LA VALIDATION DES BILLETS
+// =============================================================================
+
+export interface ValidateTicketRequest {
+  ticketCode: string // numeroTicket ou QR code
+  eventId?: string // Optionnel pour vérifier l'événement spécifique
+}
+
+export interface ValidateTicketResponse {
+  success: boolean
+  message: string
+  ticket?: TicketResponse
+  validationInfo?: {
+    validatedAt: string
+    validatedBy: string
+  }
+}
+
 export interface TicketResponse {
   id: string
   numeroTicket: string
   qrCode: string
-  statut: TicketStatus  // Maintenant compatible avec Prisma
+  statut: TicketStatus
   prix: number
+  validatedAt?: string | null
+  validatedBy?: string | null
   createdAt: string
   event: {
     id: string
@@ -142,6 +163,44 @@ export interface TicketResponse {
     nom: string | null
     prenom: string | null
     telephone?: string | null
+  }
+}
+
+export interface TicketsListResponse {
+  tickets: TicketResponse[]
+  total: number
+  page: number
+  totalPages: number
+}
+
+export interface TicketsQueryParams {
+  page?: number
+  limit?: number
+  search?: string
+  eventId?: string
+  userId?: string
+  status?: TicketStatus
+  sortBy?: 'created' | 'event' | 'price' | 'status'
+  sortOrder?: 'asc' | 'desc'
+  dateFrom?: string
+  dateTo?: string
+}
+
+// =============================================================================
+// TYPES POUR LA VALIDATION DES BILLETS
+// =============================================================================
+
+export interface ValidateTicketRequest {
+  ticketCode: string // numeroTicket ou QR code
+}
+
+export interface ValidateTicketResponse {
+  success: boolean
+  message: string
+  ticket?: TicketResponse
+  validationInfo?: {
+    validatedAt: string
+    validatedBy: string
   }
 }
 
@@ -222,6 +281,33 @@ export interface PaymentWebhookPayload {
 }
 
 // =============================================================================
+// TYPES GÉNÉRIQUES POUR LES RÉPONSES API
+// =============================================================================
+
+export interface ApiResponse<T = any> {
+  success: boolean
+  data?: T
+  message?: string
+  errors?: string[]
+}
+
+export interface ApiError {
+  code: string
+  message: string
+  details?: any
+}
+
+export interface PaginatedResponse<T> {
+  data: T[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
+// =============================================================================
 // TYPES POUR LES STATISTIQUES ET DASHBOARD
 // =============================================================================
 
@@ -293,97 +379,14 @@ export interface EventAnalytics {
   refundRate?: number
 }
 
-// =============================================================================
-// TYPES POUR LES ERREURS API
-// =============================================================================
-
-export interface ApiError {
-  error: string
-  message: string
-  statusCode: number
-  details?: any
-}
-
-// =============================================================================
-// TYPES POUR LES RÉPONSES GÉNÉRIQUES
-// =============================================================================
-
-export interface ApiResponse<T> {
-  success: boolean
-  data?: T
-  error?: ApiError
-  message?: string
-}
-
-// =============================================================================
-// TYPES POUR LA PAGINATION
-// =============================================================================
-
-export interface PaginationParams {
-  page?: number
-  limit?: number
-}
-
-export interface PaginatedResponse<T> {
-  data: T[]
-  pagination: {
-    page: number
-    limit: number
-    total: number
-    totalPages: number
-    hasNext: boolean
-    hasPrev: boolean
-  }
-}
-
-// =============================================================================
-// TYPES POUR LES FILTRES
-// =============================================================================
-
-export interface DateRange {
-  from?: string
-  to?: string
-}
-
-export interface SortOptions {
-  field: string
-  order: 'asc' | 'desc'
-}
-
-// =============================================================================
-// TYPES POUR L'UPLOAD DE FICHIERS
-// =============================================================================
-
-export interface FileUploadResponse {
-  url: string
-  filename: string
-  size: number
-  mimeType: string
-}
-
-// =============================================================================
-// TYPES POUR LES NOTIFICATIONS
-// =============================================================================
-
-export interface NotificationResponse {
-  id: string
-  type: 'info' | 'success' | 'warning' | 'error'
-  title: string
-  message: string
-  createdAt: string
-  read: boolean
-  userId: string
-}
-
-// =============================================================================
-// TYPES POUR L'EXPORT DE DONNÉES
-// =============================================================================
-
 export interface ExportRequest {
-  type: 'events' | 'users' | 'tickets' | 'sales'
-  format: 'csv' | 'excel' | 'pdf'
+  type: 'tickets' | 'users' | 'events' | 'sales'
+  format: 'csv' | 'xlsx' | 'pdf'
   filters?: any
-  dateRange?: DateRange
+  dateRange?: {
+    from: string
+    to: string
+  }
 }
 
 export interface ExportResponse {
@@ -402,16 +405,15 @@ export function isValidTicketStatus(status: string): status is TicketStatus {
 }
 
 export function isValidEventStatus(status: string): status is EventStatus {
-  return ['ACTIVE', 'INACTIVE', 'COMPLET', 'ANNULE'].includes(status)
+  return ['DRAFT', 'ACTIVE', 'INACTIVE', 'COMPLET', 'ANNULE', 'TERMINE'].includes(status)
 }
 
-
 export function isValidUserRole(role: string): role is UserRole {
-  return ['USER', 'ADMIN'].includes(role)
+  return ['USER', 'ADMIN', 'MODERATOR'].includes(role)
 }
 
 export function isValidUserStatus(status: string): status is UserStatus {
-  return ['ACTIVE', 'INACTIVE', 'BANNED'].includes(status)
+  return ['ACTIVE', 'INACTIVE', 'BANNED', 'PENDING'].includes(status)
 }
 
 // Utilitaire pour la conversion Prisma Decimal vers number
@@ -422,6 +424,39 @@ export type PrismaDecimal = {
 
 export function toPrismaNumber(value: PrismaDecimal | number): number {
   return typeof value === 'number' ? value : Number(value.toString())
+}
+
+// Helper pour mapper les types Prisma vers les types API
+export function mapPrismaTicketToApi(prismaTicket: any): TicketResponse {
+  return {
+    id: prismaTicket.id,
+    numeroTicket: prismaTicket.numeroTicket,
+    qrCode: prismaTicket.qrCode,
+    statut: prismaTicket.statut as TicketStatus,
+    prix: toPrismaNumber(prismaTicket.prix),
+    validatedAt: prismaTicket.validatedAt?.toISOString() || null,
+    validatedBy: prismaTicket.validatedBy || null,
+    createdAt: prismaTicket.createdAt.toISOString(),
+    event: {
+      id: prismaTicket.event.id,
+      titre: prismaTicket.event.titre,
+      lieu: prismaTicket.event.lieu,
+      dateDebut: prismaTicket.event.dateDebut.toISOString(),
+      dateFin: prismaTicket.event.dateFin.toISOString()
+    },
+    user: prismaTicket.user ? {
+      id: prismaTicket.user.id,
+      nom: prismaTicket.user.nom,
+      prenom: prismaTicket.user.prenom,
+      email: prismaTicket.user.email
+    } : undefined,
+    guestInfo: !prismaTicket.user ? {
+      email: prismaTicket.guestEmail,
+      nom: prismaTicket.guestNom,
+      prenom: prismaTicket.guestPrenom,
+      telephone: prismaTicket.guestTelephone
+    } : undefined
+  }
 }
 
 // Types pour les paramètres de route Next.js
@@ -476,20 +511,4 @@ export interface SearchResponse<T> {
   page: number
   totalPages: number
   facets?: Record<string, Array<{ value: string; count: number }>>
-}
-
-// Type pour la conversion Prisma → API
-export function mapTicketStatus(prismaStatus: string): TicketStatus {
-  switch (prismaStatus) {
-    case 'VALID':
-      return 'VALID'
-    case 'USED':
-      return 'USED'
-    case 'CANCELLED':
-      return 'CANCELLED'
-    case 'EXPIRED':
-      return 'EXPIRED'
-    default:
-      return 'CANCELLED' // Fallback sécurisé
-  }
 }

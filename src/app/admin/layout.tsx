@@ -101,7 +101,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 <path fillRule="evenodd" d="M10 2L3 7v11a1 1 0 001 1h3v-6h6v6h3a1 1 0 001-1V7l-7-5zM6 18v-6h8v6H6z" clipRule="evenodd" />
               </svg>
             </div>
-            <span className="text-white font-bold text-lg">Admin</span>
+            <span className="text-white font-bold text-lg">ClicBillet-Admin</span>
           </Link>
           
           <button 
@@ -145,7 +145,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             </div>
             <div className="flex-1">
               <p className="text-sm font-medium text-gray-900">Admin User</p>
-              <p className="text-xs text-gray-500">admin@simplebillet.com</p>
+              <p className="text-xs text-gray-500">admin@clicbillet.com</p>
             </div>
           </div>
           

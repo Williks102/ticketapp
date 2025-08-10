@@ -8,7 +8,44 @@ import {
   requireAdmin
 } from '@/lib/api-utils'
 import prisma from '@/lib/prisma'
-import { ValidateTicketRequest, ValidateTicketResponse, TicketResponse, TicketStatus } from '@/types/api'
+import { 
+  ValidateTicketRequest, 
+  ValidateTicketResponse, 
+  TicketResponse, 
+  TicketStatus,
+  toPrismaNumber
+} from '@/types/api'
+
+// Fonction helper pour créer la réponse ticket avec types corrects
+function createTicketResponse(ticketData: any): TicketResponse {
+  return {
+    id: ticketData.id,
+    numeroTicket: ticketData.numeroTicket,
+    qrCode: ticketData.qrCode,
+    statut: ticketData.statut as TicketStatus,
+    prix: toPrismaNumber(ticketData.prix),
+    createdAt: ticketData.createdAt.toISOString(),
+    event: {
+      id: ticketData.event.id,
+      titre: ticketData.event.titre,
+      lieu: ticketData.event.lieu,
+      dateDebut: ticketData.event.dateDebut.toISOString(),
+      dateFin: ticketData.event.dateFin.toISOString()
+    },
+    user: ticketData.user ? {
+      id: ticketData.user.id,
+      nom: ticketData.user.nom,
+      prenom: ticketData.user.prenom,
+      email: ticketData.user.email
+    } : undefined,
+    guestInfo: !ticketData.user ? {
+      email: ticketData.guestEmail || null,
+      nom: ticketData.guestNom || null,
+      prenom: ticketData.guestPrenom || null,
+      telephone: ticketData.guestTelephone || null
+    } : undefined
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -64,35 +101,6 @@ export async function POST(request: NextRequest) {
       return createApiResponse(response)
     }
 
-    // Fonction helper pour créer la réponse ticket avec types corrects
-    const createTicketResponse = (ticketData: typeof ticket): TicketResponse => ({
-      id: ticketData.id,
-      numeroTicket: ticketData.numeroTicket,
-      qrCode: ticketData.qrCode,
-      statut: ticketData.statut as TicketStatus,  // Cast approprié
-      prix: Number(ticketData.prix),  // Conversion Decimal
-      createdAt: ticketData.createdAt.toISOString(),
-      event: {
-        id: ticketData.event.id,
-        titre: ticketData.event.titre,
-        lieu: ticketData.event.lieu,
-        dateDebut: ticketData.event.dateDebut.toISOString(),
-        dateFin: ticketData.event.dateFin.toISOString()
-      },
-      user: ticketData.user ? {
-        id: ticketData.user.id,
-        nom: ticketData.user.nom,
-        prenom: ticketData.user.prenom,
-        email: ticketData.user.email
-      } : undefined,
-      guestInfo: !ticketData.user ? {
-        email: ticketData.guestEmail || '',
-        nom: ticketData.guestNom || '',
-        prenom: ticketData.guestPrenom || '',
-        telephone: ticketData.guestTelephone || undefined
-      } : undefined
-    })
-
     // Vérifier le statut du billet - ANNULÉ
     if (ticket.statut === 'CANCELLED') {
       const response: ValidateTicketResponse = {
@@ -123,22 +131,6 @@ export async function POST(request: NextRequest) {
       return createApiResponse(response)
     }
 
-    // Vérifier la date de l'événement
-    const now = new Date()
-    const eventDate = ticket.event.dateDebut
-    const timeDiff = Math.abs(now.getTime() - eventDate.getTime())
-    const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24))
-
-    // Permettre la validation 1 jour avant et après l'événement
-    if (daysDiff > 1) {
-      const response: ValidateTicketResponse = {
-        success: false,
-        ticket: createTicketResponse(ticket),
-        message: `Ce billet est valide mais l'événement a lieu le ${eventDate.toLocaleDateString('fr-FR')}.`
-      }
-      return createApiResponse(response)
-    }
-
     // Vérifier si l'événement correspond (si spécifié)
     if (body.eventId && ticket.event.id !== body.eventId) {
       const response: ValidateTicketResponse = {
@@ -149,12 +141,36 @@ export async function POST(request: NextRequest) {
       return createApiResponse(response)
     }
 
-    // Marquer le billet comme utilisé
+    // Vérifier la date de l'événement
+    const now = new Date()
+    const eventStart = new Date(ticket.event.dateDebut)
+    const eventEnd = new Date(ticket.event.dateFin)
+
+    if (now < eventStart) {
+      const response: ValidateTicketResponse = {
+        success: false,
+        ticket: createTicketResponse(ticket),
+        message: `L'événement n'a pas encore commencé. Début prévu le ${eventStart.toLocaleDateString('fr-FR')}.`
+      }
+      return createApiResponse(response)
+    }
+
+    if (now > eventEnd) {
+      const response: ValidateTicketResponse = {
+        success: false,
+        ticket: createTicketResponse(ticket),
+        message: `L'événement est terminé depuis le ${eventEnd.toLocaleDateString('fr-FR')}.`
+      }
+      return createApiResponse(response)
+    }
+
+    // Valider le billet
     const updatedTicket = await prisma.ticket.update({
       where: { id: ticket.id },
-      data: { 
+      data: {
         statut: 'USED',
-        updatedAt: new Date()
+        validatedAt: new Date(),
+        validatedBy: user.userId
       },
       include: {
         event: {
@@ -179,9 +195,12 @@ export async function POST(request: NextRequest) {
 
     const response: ValidateTicketResponse = {
       success: true,
+      message: 'Billet validé avec succès !',
       ticket: createTicketResponse(updatedTicket),
-      message: 'Billet validé avec succès ! Accès autorisé.',
-      scannedAt: new Date().toISOString()
+      validationInfo: {
+        validatedAt: updatedTicket.validatedAt!.toISOString(),
+        validatedBy: updatedTicket.validatedBy!
+      }
     }
 
     return createApiResponse(response)
@@ -196,3 +215,4 @@ export async function POST(request: NextRequest) {
   } finally {
     await prisma.$disconnect()
   }
+}

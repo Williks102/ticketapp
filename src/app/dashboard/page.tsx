@@ -162,7 +162,7 @@ export default function DashboardPage() {
           </div>
           
           <div className="card text-center">
-            <div className="text-3xl font-bold text-blue-600 mb-2">{formatPrice(stats.totalSpent)}</div>
+            <div className="text-3xl font-bold text-orange-600 mb-2">{formatPrice(stats.totalSpent)}</div>
             <div className="text-gray-600">Total dépensé</div>
           </div>
           

@@ -1,6 +1,6 @@
 // app/api/tickets/[id]/route.ts
 import { NextRequest } from 'next/server'
-import { ValidateTicketRequest, ValidateTicketResponse, TicketResponse } from '@/types/api'
+import { TicketResponse } from '@/types/api'
 
 import { 
   createApiResponse, 
