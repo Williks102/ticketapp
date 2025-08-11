@@ -1,4 +1,4 @@
-// src/types/api.ts - VERSION CORRIGÉE
+// src/types/api.ts - VERSION CORRIGÉE COMPLÈTE
 // ========================================
 // TYPES DE BASE
 // ========================================
@@ -130,7 +130,7 @@ export interface UpdateEventRequest {
 }
 
 // ========================================
-// INTERFACES BILLETS
+// INTERFACES BILLETS - CORRIGÉES
 // ========================================
 
 export interface TicketResponse {
@@ -142,7 +142,7 @@ export interface TicketResponse {
   validatedAt?: string | null
   validatedBy?: string | null
   createdAt: string
-  updatedAt: string
+  updatedAt: string  // ← AJOUTÉ
   
   // Relations
   event: EventResponse
@@ -174,15 +174,42 @@ export interface CreateTicketRequest {
   guestTelephone?: string
 }
 
+// ========================================
+// INTERFACES ACHAT DE BILLETS - CORRIGÉES
+// ========================================
+
+export interface PurchaseTicketRequest {
+  eventId: string
+  quantity: number
+  userInfo: {  // ← CORRIGÉ : était "customerInfo"
+    email: string
+    nom: string
+    prenom: string
+    telephone?: string
+  }
+  userId?: string
+  guestPurchase?: boolean    // ← AJOUTÉ
+  createAccount?: boolean    // ← AJOUTÉ
+  password?: string          // ← AJOUTÉ
+}
+
+// ========================================
+// INTERFACES VALIDATION - CORRIGÉES
+// ========================================
+
 export interface ValidateTicketRequest {
-  numeroTicket: string
-  validatedBy: string
+  ticketCode: string      // ← CORRIGÉ : était "numeroTicket"
+  validatedBy?: string
 }
 
 export interface ValidateTicketResponse {
   success: boolean
   ticket?: TicketResponse
   message: string
+  validationInfo?: {      // ← AJOUTÉ
+    validatedAt: string
+    validatedBy: string
+  }
 }
 
 // ========================================
@@ -285,18 +312,6 @@ export interface CreatePaymentRequest {
   guestTelephone?: string
 }
 
-export interface PurchaseTicketRequest {
-  eventId: string
-  quantity: number
-  customerInfo: {
-    email: string
-    nom: string
-    prenom: string
-    telephone?: string
-  }
-  userId?: string
-}
-
 // ========================================
 // INTERFACES LOGS D'ACTIVITÉ
 // ========================================
@@ -349,7 +364,7 @@ export interface SearchParams extends PaginationParams {
 }
 
 // ========================================
-// INTERFACES CLOUDINARY
+// INTERFACES CLOUDINARY - CORRIGÉES
 // ========================================
 
 export interface CloudinaryUploadResult {
@@ -365,6 +380,8 @@ export interface CloudinaryUploadResult {
   version: number
   version_id: string
   folder?: string
+  created_at?: string        // ← AJOUTÉ
+  resource_type?: string     // ← AJOUTÉ
 }
 
 export interface UploadApiResponse {
@@ -383,7 +400,11 @@ export interface UploadApiResponse {
  * @param value Valeur à convertir
  * @returns Nombre entier
  */
-export function toPrismaNumber(value: number): number {
+export function toPrismaNumber(value: number | string): number {
+  if (typeof value === 'string') {
+    const parsed = parseInt(value, 10)
+    return isNaN(parsed) ? 0 : parsed
+  }
   return Math.round(value)
 }
 
@@ -445,111 +466,11 @@ export function centsToFCFA(priceInCents: number): number {
 export function formatEventDate(dateString: string): string {
   return new Intl.DateTimeFormat('fr-FR', {
     weekday: 'long',
-    day: 'numeric',
+    year: 'numeric', 
     month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(new Date(dateString))
-}
-
-/**
- * Formate uniquement l'heure
- * @param dateString Date ISO string
- * @returns Heure formatée (ex: "20:00")
- */
-export function formatEventTime(dateString: string): string {
-  return new Intl.DateTimeFormat('fr-FR', {
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(new Date(dateString))
-}
-
-/**
- * Formate une date courte
- * @param dateString Date ISO string
- * @returns Date courte (ex: "15 déc 2025")
- */
-export function formatShortDate(dateString: string): string {
-  return new Intl.DateTimeFormat('fr-FR', {
     day: 'numeric',
-    month: 'short',
-    year: 'numeric'
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Africa/Abidjan'
   }).format(new Date(dateString))
 }
-
-// ========================================
-// UTILITAIRES VALIDATION
-// ========================================
-
-/**
- * Valide un email
- * @param email Email à valider
- * @returns True si valide
- */
-export function isValidEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return emailRegex.test(email)
-}
-
-/**
- * Valide un numéro de téléphone sénégalais
- * @param phone Numéro de téléphone
- * @returns True si valide
- */
-export function isValidSenegalPhone(phone: string): boolean {
-  // Format: +221 XX XXX XX XX ou 77/78/70/76/75 XXX XX XX
-  const phoneRegex = /^(\+221|00221)?[67][0-8]\d{3}\d{2}\d{2}$/
-  return phoneRegex.test(phone.replace(/\s/g, ''))
-}
-
-/**
- * Valide une date d'événement
- * @param dateString Date à valider
- * @returns True si la date est dans le futur
- */
-export function isValidEventDate(dateString: string): boolean {
-  const eventDate = new Date(dateString)
-  const now = new Date()
-  return eventDate > now
-}
-
-// ========================================
-// CONSTANTES
-// ========================================
-
-export const CURRENCIES = {
-  XOF: {
-    code: 'XOF',
-    symbol: 'FCFA',
-    name: 'Franc CFA (BCEAO)',
-    decimals: 0
-  }
-} as const
-
-export const EVENT_CATEGORIES = [
-  'Concerts',
-  'Théâtre', 
-  'Festivals',
-  'Expositions',
-  'Spectacles',
-  'Gastronomie',
-  'Conférences',
-  'Sport',
-  'Cinéma',
-  'Art',
-  'Culture',
-  'Musique',
-  'Danse',
-  'Technologie',
-  'Business',
-  'Famille'
-] as const
-
-export const PAGINATION_LIMITS = {
-  DEFAULT: 10,
-  EVENTS: 12,
-  TICKETS: 20,
-  USERS: 15,
-  MAX: 100
-} as const

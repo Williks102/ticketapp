@@ -1,5 +1,4 @@
 // src/app/api/tickets/validate/route.ts - VERSION CORRIGÉE
-
 import { NextRequest } from 'next/server'
 import { 
   createApiResponse, 
@@ -13,6 +12,9 @@ import {
   ValidateTicketResponse, 
   TicketResponse, 
   TicketStatus,
+  EventStatus,
+  UserRole,
+  UserStatus,
   toPrismaNumber
 } from '@/types/api'
 
@@ -24,26 +26,44 @@ function createTicketResponse(ticketData: any): TicketResponse {
     qrCode: ticketData.qrCode,
     statut: ticketData.statut as TicketStatus,
     prix: toPrismaNumber(ticketData.prix),
+    validatedAt: ticketData.validatedAt?.toISOString() || null,
+    validatedBy: ticketData.validatedBy,
     createdAt: ticketData.createdAt.toISOString(),
+    updatedAt: ticketData.updatedAt.toISOString(),
     event: {
       id: ticketData.event.id,
       titre: ticketData.event.titre,
+      description: ticketData.event.description || '',
       lieu: ticketData.event.lieu,
+      adresse: ticketData.event.adresse || '',
       dateDebut: ticketData.event.dateDebut.toISOString(),
-      dateFin: ticketData.event.dateFin.toISOString()
+      dateFin: ticketData.event.dateFin.toISOString(),
+      prix: toPrismaNumber(ticketData.event.prix),
+      nbPlaces: ticketData.event.nbPlaces,
+      placesRestantes: ticketData.event.placesRestantes,
+      statut: ticketData.event.statut as EventStatus,
+      organisateur: ticketData.event.organisateur,
+      image: ticketData.event.image,
+      categories: ticketData.event.categories || [],
+      createdAt: ticketData.event.createdAt.toISOString(),
+      updatedAt: ticketData.event.updatedAt.toISOString()
     },
     user: ticketData.user ? {
       id: ticketData.user.id,
+      email: ticketData.user.email,
       nom: ticketData.user.nom,
       prenom: ticketData.user.prenom,
-      email: ticketData.user.email
-    } : undefined,
-    guestInfo: !ticketData.user ? {
-      email: ticketData.guestEmail || null,
-      nom: ticketData.guestNom || null,
-      prenom: ticketData.guestPrenom || null,
-      telephone: ticketData.guestTelephone || null
-    } : undefined
+      telephone: ticketData.user.telephone,
+      role: ticketData.user.role as UserRole,
+      statut: ticketData.user.statut as UserStatus,
+      createdAt: ticketData.user.createdAt.toISOString(),
+      updatedAt: ticketData.user.updatedAt.toISOString(),
+      lastLogin: ticketData.user.lastLogin?.toISOString() || null
+    } : null,
+    guestEmail: ticketData.guestEmail,
+    guestNom: ticketData.guestNom,
+    guestPrenom: ticketData.guestPrenom,
+    guestTelephone: ticketData.guestTelephone
   }
 }
 
@@ -61,6 +81,7 @@ export async function POST(request: NextRequest) {
 
     const body: ValidateTicketRequest = await request.json()
 
+    // CORRIGÉ : utiliser 'ticketCode' au lieu de 'numeroTicket'
     if (!body.ticketCode) {
       return createApiError(
         'VALIDATION_ERROR',
@@ -77,17 +98,34 @@ export async function POST(request: NextRequest) {
           select: {
             id: true,
             titre: true,
+            description: true,
             lieu: true,
+            adresse: true,
             dateDebut: true,
-            dateFin: true
+            dateFin: true,
+            prix: true,
+            nbPlaces: true,
+            placesRestantes: true,
+            statut: true,
+            organisateur: true,
+            image: true,
+            categories: true,
+            createdAt: true,
+            updatedAt: true
           }
         },
         user: {
           select: {
             id: true,
+            email: true,
             nom: true,
             prenom: true,
-            email: true
+            telephone: true,
+            role: true,
+            statut: true,
+            createdAt: true,
+            updatedAt: true,
+            lastLogin: true
           }
         }
       }
@@ -111,7 +149,7 @@ export async function POST(request: NextRequest) {
       return createApiResponse(response)
     }
 
-    // Vérifier le statut du billet - EXPIRÉ
+    // Vérifier si le billet a expiré
     if (ticket.statut === 'EXPIRED') {
       const response: ValidateTicketResponse = {
         success: false,
@@ -121,45 +159,22 @@ export async function POST(request: NextRequest) {
       return createApiResponse(response)
     }
 
-    // Vérifier le statut du billet - DÉJÀ UTILISÉ
+    // Vérifier si le billet a déjà été utilisé
     if (ticket.statut === 'USED') {
       const response: ValidateTicketResponse = {
         success: false,
         ticket: createTicketResponse(ticket),
-        message: 'Ce billet a déjà été utilisé.'
+        message: `Ce billet a déjà été validé le ${ticket.validatedAt?.toLocaleDateString('fr-FR')} par ${ticket.validatedBy}.`
       }
       return createApiResponse(response)
     }
 
-    // Vérifier si l'événement correspond (si spécifié)
-    if (body.eventId && ticket.event.id !== body.eventId) {
+    // Vérifier que l'événement n'est pas terminé
+    if (new Date() > ticket.event.dateFin) {
       const response: ValidateTicketResponse = {
         success: false,
         ticket: createTicketResponse(ticket),
-        message: 'Ce billet n\'est pas valide pour cet événement.'
-      }
-      return createApiResponse(response)
-    }
-
-    // Vérifier la date de l'événement
-    const now = new Date()
-    const eventStart = new Date(ticket.event.dateDebut)
-    const eventEnd = new Date(ticket.event.dateFin)
-
-    if (now < eventStart) {
-      const response: ValidateTicketResponse = {
-        success: false,
-        ticket: createTicketResponse(ticket),
-        message: `L'événement n'a pas encore commencé. Début prévu le ${eventStart.toLocaleDateString('fr-FR')}.`
-      }
-      return createApiResponse(response)
-    }
-
-    if (now > eventEnd) {
-      const response: ValidateTicketResponse = {
-        success: false,
-        ticket: createTicketResponse(ticket),
-        message: `L'événement est terminé depuis le ${eventEnd.toLocaleDateString('fr-FR')}.`
+        message: 'Cet événement est terminé. Le billet ne peut plus être validé.'
       }
       return createApiResponse(response)
     }
@@ -170,32 +185,50 @@ export async function POST(request: NextRequest) {
       data: {
         statut: 'USED',
         validatedAt: new Date(),
-        validatedBy: user.userId
+        validatedBy: body.validatedBy || user.userId
       },
       include: {
         event: {
           select: {
             id: true,
             titre: true,
+            description: true,
             lieu: true,
+            adresse: true,
             dateDebut: true,
-            dateFin: true
+            dateFin: true,
+            prix: true,
+            nbPlaces: true,
+            placesRestantes: true,
+            statut: true,
+            organisateur: true,
+            image: true,
+            categories: true,
+            createdAt: true,
+            updatedAt: true
           }
         },
         user: {
           select: {
             id: true,
+            email: true,
             nom: true,
             prenom: true,
-            email: true
+            telephone: true,
+            role: true,
+            statut: true,
+            createdAt: true,
+            updatedAt: true,
+            lastLogin: true
           }
         }
       }
     })
 
+    // Réponse de succès
     const response: ValidateTicketResponse = {
       success: true,
-      message: 'Billet validé avec succès !',
+      message: 'Billet validé avec succès!',
       ticket: createTicketResponse(updatedTicket),
       validationInfo: {
         validatedAt: updatedTicket.validatedAt!.toISOString(),
