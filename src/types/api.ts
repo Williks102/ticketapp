@@ -1,64 +1,65 @@
-// src/types/api.ts - VERSION CORRIGÉE
+// src/types/api.ts - Types complets pour l'API
 
-// =============================================================================
-// TYPES STRICTS POUR LES STATUTS (synchronisés avec Prisma)
-// =============================================================================
+// ========================================
+// TYPES DE BASE
+// ========================================
 
-export type EventStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE' | 'TERMINE'
-export type TicketStatus = 'VALID' | 'USED' | 'CANCELLED' | 'EXPIRED'
 export type UserRole = 'USER' | 'ADMIN' | 'MODERATOR'
 export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'BANNED' | 'PENDING'
+export type EventStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE' | 'TERMINE'
+export type TicketStatus = 'VALID' | 'USED' | 'CANCELLED' | 'EXPIRED'
+export type PaymentStatus = 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'REFUNDED' | 'PARTIALLY_REFUNDED'
+export type ActivityType = 'USER_ACTION' | 'ADMIN_ACTION' | 'SYSTEM_ACTION' | 'PAYMENT_ACTION' | 'VALIDATION_ACTION'
 
-// =============================================================================
-// TYPES POUR L'AUTHENTIFICATION
-// =============================================================================
+// ========================================
+// INTERFACES UTILISATEUR
+// ========================================
 
-export interface LoginRequest {
+export interface UserResponse {
+  id: string
   email: string
-  password: string
-  rememberMe?: boolean
+  nom: string
+  prenom: string
+  telephone?: string
+  role: UserRole
+  statut: UserStatus
+  createdAt: string
+  updatedAt: string
+  lastLogin?: string
 }
 
-export interface RegisterRequest {
+export interface CreateUserRequest {
   email: string
   nom: string
   prenom: string
   telephone?: string
   password: string
+  role?: UserRole
 }
 
-export interface AuthResponse {
-  user: {
-    id: string
-    email: string
-    nom: string
-    prenom: string
-    role: UserRole
-  }
+export interface UpdateUserRequest {
+  nom?: string
+  prenom?: string
+  telephone?: string
+  email?: string
+  role?: UserRole
+  statut?: UserStatus
+}
+
+export interface LoginRequest {
+  email: string
+  password: string
+}
+
+export interface LoginResponse {
+  user: UserResponse
   token: string
+  expiresIn: number
 }
 
-// =============================================================================
-// TYPES POUR LES ÉVÉNEMENTS
-// =============================================================================
-
-export interface CreateEventRequest {
-  titre: string
-  description: string
-  lieu: string
-  adresse: string
-  dateDebut: string
-  dateFin: string
-  prix: number
-  nbPlaces: number
-  organisateur: string
-  image?: string
-  categories: string[]
-}
-
-export interface UpdateEventRequest extends Partial<CreateEventRequest> {
-  statut?: EventStatus
-}
+// ========================================
+// INTERFACES ÉVÉNEMENTS
+// ========================================
 
 export interface EventResponse {
   id: string
@@ -66,18 +67,21 @@ export interface EventResponse {
   description: string
   lieu: string
   adresse: string
-  dateDebut: string
-  dateFin: string
-  prix: number
+  dateDebut: string // ISO string
+  dateFin: string   // ISO string
+  prix: number      // Prix en centimes de FCFA
   nbPlaces: number
   placesRestantes: number
   statut: EventStatus
   organisateur: string
   image?: string | null
+  categories?: string[] // Array de catégories
   createdAt: string
   updatedAt: string
+  
+  // Statistiques calculées
   ticketsVendus?: number
-  revenue?: number
+  revenue?: number // Revenue en centimes de FCFA
 }
 
 export interface EventsListResponse {
@@ -85,85 +89,71 @@ export interface EventsListResponse {
   total: number
   page: number
   totalPages: number
+  filters?: {
+    search?: string
+    category?: string
+    location?: string
+    priceMin?: number
+    priceMax?: number
+    dateFrom?: string
+    dateTo?: string
+    status?: EventStatus
+  }
 }
 
-export interface EventsQueryParams {
-  page?: number
-  limit?: number
-  search?: string
+export interface CreateEventRequest {
+  titre: string
+  description: string
+  lieu: string
+  adresse: string
+  dateDebut: string // ISO string
+  dateFin: string   // ISO string
+  prix: number      // Prix en centimes de FCFA
+  nbPlaces: number
+  organisateur: string
+  image?: string
+  categories?: string[]
+}
+
+export interface UpdateEventRequest {
+  titre?: string
+  description?: string
   lieu?: string
-  status?: string
-  sortBy?: 'date' | 'title' | 'price' | 'revenue'
-  sortOrder?: 'asc' | 'desc'
-  dateFrom?: string
-  dateTo?: string
+  adresse?: string
+  dateDebut?: string
+  dateFin?: string
+  prix?: number
+  nbPlaces?: number
+  organisateur?: string
+  image?: string
+  statut?: EventStatus
+  categories?: string[]
 }
 
-// =============================================================================
-// TYPES POUR LES BILLETS
-// =============================================================================
-
-export interface PurchaseTicketRequest {
-  eventId: string
-  quantity: number
-  userInfo: {
-    email: string
-    nom: string
-    prenom: string
-    telephone?: string
-  }
-  createAccount?: boolean
-  password?: string
-  guestPurchase?: boolean
-}
-
-// =============================================================================
-// TYPES POUR LA VALIDATION DES BILLETS
-// =============================================================================
-
-export interface ValidateTicketRequest {
-  ticketCode: string // numeroTicket ou QR code
-  eventId?: string // Optionnel pour vérifier l'événement spécifique
-}
-
-export interface ValidateTicketResponse {
-  success: boolean
-  message: string
-  ticket?: TicketResponse
-  validationInfo?: {
-    validatedAt: string
-    validatedBy: string
-  }
-}
+// ========================================
+// INTERFACES BILLETS
+// ========================================
 
 export interface TicketResponse {
   id: string
   numeroTicket: string
   qrCode: string
   statut: TicketStatus
-  prix: number
-  validatedAt?: string | null
-  validatedBy?: string | null
+  prix: number // Prix en centimes de FCFA
+  validatedAt?: string
+  validatedBy?: string
   createdAt: string
-  event: {
-    id: string
-    titre: string
-    lieu: string
-    dateDebut: string
-    dateFin: string
-  }
-  user?: {
-    id: string
-    nom: string
-    prenom: string
-    email: string
-  }
-  guestInfo?: {
-    email: string | null
-    nom: string | null
-    prenom: string | null
-    telephone?: string | null
-  }
+  updatedAt: string
+  
+  // Relations
+  event: EventResponse
+  user?: UserResponse
+  
+  // Info invité (si pas d'utilisateur)
+  guestEmail?: string
+  guestNom?: string
+  guestPrenom?: string
+  guestTelephone?: string
 }
 
 export interface TicketsListResponse {
@@ -173,342 +163,320 @@ export interface TicketsListResponse {
   totalPages: number
 }
 
-export interface TicketsQueryParams {
-  page?: number
-  limit?: number
-  search?: string
-  eventId?: string
-  userId?: string
-  status?: TicketStatus
-  sortBy?: 'created' | 'event' | 'price' | 'status'
-  sortOrder?: 'asc' | 'desc'
-  dateFrom?: string
-  dateTo?: string
-}
-
-// =============================================================================
-// TYPES POUR LA VALIDATION DES BILLETS
-// =============================================================================
-
-export interface ValidateTicketRequest {
-  ticketCode: string // numeroTicket ou QR code
-}
-
-export interface ValidateTicketResponse {
-  success: boolean
-  message: string
-  ticket?: TicketResponse
-  validationInfo?: {
-    validatedAt: string
-    validatedBy: string
-  }
-}
-
-// =============================================================================
-// TYPES POUR LES UTILISATEURS
-// =============================================================================
-
-export interface UserResponse {
-  id: string
-  email: string
-  nom: string
-  prenom: string
-  telephone?: string | null
-  role: UserRole
-  statut: UserStatus
-  createdAt: string
-  lastLogin?: string | null
-  ticketsAchetes: number
-  totalDepense: number
-}
-
-export interface UsersListResponse {
-  users: UserResponse[]
-  total: number
-  page: number
-  totalPages: number
-}
-
-export interface UsersQueryParams {
-  page?: number
-  limit?: number
-  search?: string
-  role?: UserRole
-  status?: UserStatus
-  sortBy?: 'created' | 'name' | 'email' | 'spent' | 'tickets'
-  sortOrder?: 'asc' | 'desc'
-}
-
-export interface UpdateUserRequest {
-  nom?: string
-  prenom?: string
-  telephone?: string | null
-  role?: UserRole
-  statut?: UserStatus
-}
-
-// =============================================================================
-// TYPES POUR LES PAIEMENTS
-// =============================================================================
-
-export interface CreatePaymentIntentRequest {
+export interface CreateTicketRequest {
   eventId: string
   quantity: number
-  userInfo: PurchaseTicketRequest['userInfo']
+  userId?: string
+  
+  // Info invité
+  guestEmail?: string
+  guestNom?: string
+  guestPrenom?: string
+  guestTelephone?: string
 }
 
-export interface PaymentIntentResponse {
-  clientSecret: string
-  amount: number
+export interface ValidateTicketRequest {
+  numeroTicket: string
+  validatedBy: string
+}
+
+// ========================================
+// INTERFACES STATISTIQUES
+// ========================================
+
+export interface EventStatsResponse {
+  id: string
+  eventId: string
+  ticketsSold: number
+  revenue: number // En centimes de FCFA
+  conversionRate: number
+  averagePrice: number // En centimes de FCFA
+  peakSalesDay?: string
+  lastUpdated: string
+  
+  // Données graphiques
+  salesByDay?: Array<{
+    date: string
+    sales: number
+    revenue: number
+  }>
+  hourlyStats?: Array<{
+    hour: number
+    sales: number
+    revenue: number
+  }>
+}
+
+export interface DashboardStatsResponse {
+  totalEvents: number
+  totalTicketsSold: number
+  totalRevenue: number // En centimes de FCFA
+  activeEvents: number
+  
+  // Événements récents
+  recentEvents: EventResponse[]
+  
+  // Top événements
+  topEvents: Array<{
+    event: EventResponse
+    ticketsSold: number
+    revenue: number
+  }>
+  
+  // Ventes par période
+  salesByPeriod: Array<{
+    period: string
+    sales: number
+    revenue: number
+  }>
+}
+
+// ========================================
+// INTERFACES PAIEMENTS
+// ========================================
+
+export interface PaymentResponse {
+  id: string
+  stripePaymentId: string
+  amount: number // En centimes de FCFA
   currency: string
+  status: PaymentStatus
+  eventId: string
+  customerEmail: string
+  customerName?: string
+  refundedAmount?: number
+  refundedAt?: string
+  refundReason?: string
+  createdAt: string
+  updatedAt: string
 }
 
-export interface PaymentWebhookPayload {
-  type: string
-  data: {
-    object: {
-      id: string
-      amount: number
-      currency: string
-      status: string
-      metadata: {
-        eventId: string
-        quantity: string
-        userEmail: string
-      }
-    }
-  }
+export interface CreatePaymentRequest {
+  eventId: string
+  quantity: number
+  customerEmail: string
+  customerName?: string
+  
+  // Info invité si pas de compte
+  guestNom?: string
+  guestPrenom?: string
+  guestTelephone?: string
 }
 
-// =============================================================================
-// TYPES GÉNÉRIQUES POUR LES RÉPONSES API
-// =============================================================================
+// ========================================
+// INTERFACES LOGS D'ACTIVITÉ
+// ========================================
+
+export interface ActivityLogResponse {
+  id: string
+  type: ActivityType
+  entity: string
+  entityId: string
+  action: string
+  oldData?: any
+  newData?: any
+  metadata?: any
+  userId?: string
+  user?: UserResponse
+  ipAddress?: string
+  userAgent?: string
+  createdAt: string
+}
+
+// ========================================
+// INTERFACES GÉNÉRIQUES
+// ========================================
 
 export interface ApiResponse<T = any> {
   success: boolean
   data?: T
+  error?: string
   message?: string
-  errors?: string[]
+  timestamp: string
 }
 
 export interface ApiError {
   code: string
   message: string
   details?: any
+  statusCode: number
 }
 
-export interface PaginatedResponse<T> {
-  data: T[]
-  pagination: {
-    page: number
-    limit: number
-    total: number
-    totalPages: number
+export interface PaginationParams {
+  page?: number
+  limit?: number
+  sortBy?: string
+  sortOrder?: 'asc' | 'desc'
+}
+
+export interface SearchParams extends PaginationParams {
+  search?: string
+  filters?: Record<string, any>
+}
+
+// ========================================
+// UTILITAIRES MONÉTAIRES FCFA
+// ========================================
+
+/**
+ * Formate un prix en centimes de FCFA vers un affichage lisible
+ * @param priceInCents Prix en centimes de FCFA
+ * @returns String formaté (ex: "21 000 FCFA")
+ */
+export function formatPrice(priceInCents: number): string {
+  const priceInFCFA = priceInCents / 100
+  return `${priceInFCFA.toLocaleString('fr-FR')} FCFA`
+}
+
+/**
+ * Formate un prix avec le symbole de devise international
+ * @param priceInCents Prix en centimes de FCFA
+ * @returns String formaté avec Intl.NumberFormat
+ */
+export function formatPriceIntl(priceInCents: number): string {
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: 'XOF',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(priceInCents / 100)
+}
+
+/**
+ * Convertit un prix en FCFA vers des centimes
+ * @param fcfaPrice Prix en FCFA
+ * @returns Prix en centimes
+ */
+export function parsePriceToMoney(fcfaPrice: number): number {
+  return Math.round(fcfaPrice * 100)
+}
+
+/**
+ * Convertit des centimes vers des FCFA
+ * @param priceInCents Prix en centimes
+ * @returns Prix en FCFA
+ */
+export function centsToFCFA(priceInCents: number): number {
+  return priceInCents / 100
+}
+
+// ========================================
+// UTILITAIRES DATES
+// ========================================
+
+/**
+ * Formate une date d'événement
+ * @param dateString Date ISO string
+ * @returns Date formatée (ex: "lundi 15 décembre 2025 à 20:00")
+ */
+export function formatEventDate(dateString: string): string {
+  return new Intl.DateTimeFormat('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(new Date(dateString))
+}
+
+/**
+ * Formate uniquement l'heure
+ * @param dateString Date ISO string
+ * @returns Heure formatée (ex: "20:00")
+ */
+export function formatEventTime(dateString: string): string {
+  return new Intl.DateTimeFormat('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(new Date(dateString))
+}
+
+/**
+ * Formate une date courte
+ * @param dateString Date ISO string
+ * @returns Date courte (ex: "15 déc 2025")
+ */
+export function formatShortDate(dateString: string): string {
+  return new Intl.DateTimeFormat('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  }).format(new Date(dateString))
+}
+
+// ========================================
+// UTILITAIRES VALIDATION
+// ========================================
+
+/**
+ * Valide un email
+ * @param email Email à valider
+ * @returns True si valide
+ */
+export function isValidEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  return emailRegex.test(email)
+}
+
+/**
+ * Valide un numéro de téléphone sénégalais
+ * @param phone Numéro de téléphone
+ * @returns True si valide
+ */
+export function isValidSenegalPhone(phone: string): boolean {
+  // Format: +221 XX XXX XX XX ou 77/78/70/76/75 XXX XX XX
+  const phoneRegex = /^(\+221|00221)?[67][0-8]\d{3}\d{2}\d{2}$/
+  return phoneRegex.test(phone.replace(/\s/g, ''))
+}
+
+/**
+ * Valide une date d'événement
+ * @param dateString Date à valider
+ * @returns True si la date est dans le futur
+ */
+export function isValidEventDate(dateString: string): boolean {
+  const eventDate = new Date(dateString)
+  const now = new Date()
+  return eventDate > now
+}
+
+// ========================================
+// CONSTANTES
+// ========================================
+
+export const CURRENCIES = {
+  XOF: {
+    code: 'XOF',
+    symbol: 'FCFA',
+    name: 'Franc CFA (BCEAO)',
+    decimals: 0
   }
-}
+} as const
 
-// =============================================================================
-// TYPES POUR LES STATISTIQUES ET DASHBOARD
-// =============================================================================
+export const EVENT_CATEGORIES = [
+  'Concerts',
+  'Théâtre', 
+  'Festivals',
+  'Expositions',
+  'Spectacles',
+  'Gastronomie',
+  'Conférences',
+  'Sport',
+  'Cinéma',
+  'Art',
+  'Culture',
+  'Musique',
+  'Danse',
+  'Technologie',
+  'Business',
+  'Famille'
+] as const
 
-export interface DashboardStats {
-  totalEvents: number
-  totalTickets: number
-  totalRevenue: number
-  totalUsers: number
-  todayTickets: number
-  thisMonthRevenue: number
-  activeEvents: number
-  conversionRate: number
-}
-
-export interface RecentActivity {
-  id: string
-  type: 'ticket_sold' | 'event_created' | 'user_registered' | 'payment_received'
-  description: string
-  timestamp: string
-  amount?: number
-  userId?: string
-  eventId?: string
-}
-
-export interface TopEvent {
-  id: string
-  title: string
-  ticketsSold: number
-  revenue: number
-  date: string
-}
-
-export interface DashboardResponse {
-  stats: DashboardStats
-  recentActivities: RecentActivity[]
-  topEvents: TopEvent[]
-}
-
-// =============================================================================
-// TYPES POUR LES RAPPORTS
-// =============================================================================
-
-export interface SalesReport {
-  period: 'day' | 'week' | 'month' | 'year'
-  startDate: string
-  endDate: string
-  totalRevenue: number
-  totalTickets: number
-  averageTicketPrice: number
-  topEvents: TopEvent[]
-  salesByDay: Array<{
-    date: string
-    revenue: number
-    tickets: number
-  }>
-}
-
-export interface EventAnalytics {
-  eventId: string
-  totalTickets: number
-  revenue: number
-  conversionRate: number
-  salesByDay: Array<{
-    date: string
-    tickets: number
-    revenue: number
-  }>
-  attendanceRate?: number
-  refundRate?: number
-}
-
-export interface ExportRequest {
-  type: 'tickets' | 'users' | 'events' | 'sales'
-  format: 'csv' | 'xlsx' | 'pdf'
-  filters?: any
-  dateRange?: {
-    from: string
-    to: string
-  }
-}
-
-export interface ExportResponse {
-  downloadUrl: string
-  filename: string
-  expiresAt: string
-}
-
-// =============================================================================
-// UTILITAIRES DE TYPE
-// =============================================================================
-
-// Type guard pour vérifier les statuts
-export function isValidTicketStatus(status: string): status is TicketStatus {
-  return ['VALID', 'USED', 'CANCELLED', 'EXPIRED'].includes(status)
-}
-
-export function isValidEventStatus(status: string): status is EventStatus {
-  return ['DRAFT', 'ACTIVE', 'INACTIVE', 'COMPLET', 'ANNULE', 'TERMINE'].includes(status)
-}
-
-export function isValidUserRole(role: string): role is UserRole {
-  return ['USER', 'ADMIN', 'MODERATOR'].includes(role)
-}
-
-export function isValidUserStatus(status: string): status is UserStatus {
-  return ['ACTIVE', 'INACTIVE', 'BANNED', 'PENDING'].includes(status)
-}
-
-// Utilitaire pour la conversion Prisma Decimal vers number
-export type PrismaDecimal = {
-  toString(): string
-  toNumber(): number
-}
-
-export function toPrismaNumber(value: PrismaDecimal | number): number {
-  return typeof value === 'number' ? value : Number(value.toString())
-}
-
-// Helper pour mapper les types Prisma vers les types API
-export function mapPrismaTicketToApi(prismaTicket: any): TicketResponse {
-  return {
-    id: prismaTicket.id,
-    numeroTicket: prismaTicket.numeroTicket,
-    qrCode: prismaTicket.qrCode,
-    statut: prismaTicket.statut as TicketStatus,
-    prix: toPrismaNumber(prismaTicket.prix),
-    validatedAt: prismaTicket.validatedAt?.toISOString() || null,
-    validatedBy: prismaTicket.validatedBy || null,
-    createdAt: prismaTicket.createdAt.toISOString(),
-    event: {
-      id: prismaTicket.event.id,
-      titre: prismaTicket.event.titre,
-      lieu: prismaTicket.event.lieu,
-      dateDebut: prismaTicket.event.dateDebut.toISOString(),
-      dateFin: prismaTicket.event.dateFin.toISOString()
-    },
-    user: prismaTicket.user ? {
-      id: prismaTicket.user.id,
-      nom: prismaTicket.user.nom,
-      prenom: prismaTicket.user.prenom,
-      email: prismaTicket.user.email
-    } : undefined,
-    guestInfo: !prismaTicket.user ? {
-      email: prismaTicket.guestEmail,
-      nom: prismaTicket.guestNom,
-      prenom: prismaTicket.guestPrenom,
-      telephone: prismaTicket.guestTelephone
-    } : undefined
-  }
-}
-
-// Types pour les paramètres de route Next.js
-export interface RouteParams<T = Record<string, string>> {
-  params: T
-}
-
-// Types pour les réponses d'API avec metadata
-export interface ApiResponseWithMeta<T> extends ApiResponse<T> {
-  meta?: {
-    timestamp: string
-    version: string
-    requestId: string
-  }
-}
-
-// Types pour la validation des formulaires
-export interface FormValidationError {
-  field: string
-  message: string
-  code?: string
-}
-
-export interface ValidationResponse {
-  isValid: boolean
-  errors: FormValidationError[]
-}
-
-// Types pour les webhooks
-export interface WebhookPayload<T = any> {
-  id: string
-  type: string
-  created: number
-  data: T
-  livemode: boolean
-}
-
-// Types pour les sessions utilisateur
-export interface UserSession {
-  userId: string
-  email: string
-  role: UserRole
-  iat: number
-  exp: number
-}
-
-// Types pour les réponses de recherche
-export interface SearchResponse<T> {
-  results: T[]
-  query: string
-  total: number
-  page: number
-  totalPages: number
-  facets?: Record<string, Array<{ value: string; count: number }>>
-}
+export const PAGINATION_LIMITS = {
+  DEFAULT: 10,
+  EVENTS: 12,
+  TICKETS: 20,
+  USERS: 15,
+  MAX: 100
+} as const
