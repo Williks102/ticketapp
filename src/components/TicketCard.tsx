@@ -1,13 +1,14 @@
 // components/TicketCard.tsx
 import Link from 'next/link'
 import { TicketResponse } from '@/types/api'
+import { ReactElement } from 'react'
 
 interface TicketCardProps {
   ticket: TicketResponse
   onDownloadPDF: (ticketId: string, numeroTicket: string) => void
   formatDate: (dateString: string) => string
   formatPrice: (price: number) => string
-  getStatusBadge: (statut: string) => JSX.Element
+  getStatusBadge: (statut: string) => ReactElement
   isEventPast: (dateString: string) => boolean
 }
 
