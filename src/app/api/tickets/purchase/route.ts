@@ -16,6 +16,7 @@ import {
   TicketStatus,
   EventStatus
 } from '@/types/api'
+import bcrypt from 'bcryptjs'
 
 // POST /api/tickets/purchase - Acheter des billets
 export async function POST(request: NextRequest) {
