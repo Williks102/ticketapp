@@ -11,7 +11,6 @@ import {
   EventResponse, 
   UpdateEventRequest,
   EventStatus,  // ← NOUVEAU
-  RouteParams,  // ← NOUVEAU (optionnel)
   toPrismaNumber  // ← NOUVEAU (optionnel)
 } from '@/types/api'
 

@@ -1,5 +1,4 @@
-// src/types/api.ts - Types complets pour l'API
-
+// src/types/api.ts - VERSION CORRIGÉE
 // ========================================
 // TYPES DE BASE
 // ========================================
@@ -20,12 +19,12 @@ export interface UserResponse {
   email: string
   nom: string
   prenom: string
-  telephone?: string
+  telephone?: string | null
   role: UserRole
   statut: UserStatus
   createdAt: string
   updatedAt: string
-  lastLogin?: string
+  lastLogin?: string | null
 }
 
 export interface CreateUserRequest {
@@ -140,20 +139,20 @@ export interface TicketResponse {
   qrCode: string
   statut: TicketStatus
   prix: number // Prix en centimes de FCFA
-  validatedAt?: string
-  validatedBy?: string
+  validatedAt?: string | null
+  validatedBy?: string | null
   createdAt: string
   updatedAt: string
   
   // Relations
   event: EventResponse
-  user?: UserResponse
+  user?: UserResponse | null
   
   // Info invité (si pas d'utilisateur)
-  guestEmail?: string
-  guestNom?: string
-  guestPrenom?: string
-  guestTelephone?: string
+  guestEmail?: string | null
+  guestNom?: string | null
+  guestPrenom?: string | null
+  guestTelephone?: string | null
 }
 
 export interface TicketsListResponse {
@@ -180,9 +179,44 @@ export interface ValidateTicketRequest {
   validatedBy: string
 }
 
+export interface ValidateTicketResponse {
+  success: boolean
+  ticket?: TicketResponse
+  message: string
+}
+
 // ========================================
 // INTERFACES STATISTIQUES
 // ========================================
+
+export interface DashboardStats {
+  totalEvents: number
+  totalTicketsSold: number
+  totalRevenue: number // En centimes de FCFA
+  activeEvents: number
+}
+
+export interface RecentActivity {
+  id: string
+  type: string
+  description: string
+  timestamp: string
+}
+
+export interface TopEvent {
+  id: string
+  title: string
+  ticketsSold: number
+  revenue: number
+  date: string
+}
+
+export interface DashboardStatsResponse {
+  stats: DashboardStats
+  recentEvents: EventResponse[]
+  topEvents: TopEvent[]
+  recentActivity: RecentActivity[]
+}
 
 export interface EventStatsResponse {
   id: string
@@ -191,7 +225,7 @@ export interface EventStatsResponse {
   revenue: number // En centimes de FCFA
   conversionRate: number
   averagePrice: number // En centimes de FCFA
-  peakSalesDay?: string
+  peakSalesDay?: string | null
   lastUpdated: string
   
   // Données graphiques
@@ -207,25 +241,13 @@ export interface EventStatsResponse {
   }>
 }
 
-export interface DashboardStatsResponse {
-  totalEvents: number
-  totalTicketsSold: number
-  totalRevenue: number // En centimes de FCFA
-  activeEvents: number
-  
-  // Événements récents
-  recentEvents: EventResponse[]
-  
-  // Top événements
-  topEvents: Array<{
-    event: EventResponse
-    ticketsSold: number
-    revenue: number
-  }>
-  
-  // Ventes par période
-  salesByPeriod: Array<{
-    period: string
+export interface SalesReport {
+  totalSales: number
+  totalRevenue: number
+  period: string
+  events: Array<{
+    eventId: string
+    eventTitle: string
     sales: number
     revenue: number
   }>
@@ -243,10 +265,10 @@ export interface PaymentResponse {
   status: PaymentStatus
   eventId: string
   customerEmail: string
-  customerName?: string
-  refundedAmount?: number
-  refundedAt?: string
-  refundReason?: string
+  customerName?: string | null
+  refundedAmount?: number | null
+  refundedAt?: string | null
+  refundReason?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -263,6 +285,18 @@ export interface CreatePaymentRequest {
   guestTelephone?: string
 }
 
+export interface PurchaseTicketRequest {
+  eventId: string
+  quantity: number
+  customerInfo: {
+    email: string
+    nom: string
+    prenom: string
+    telephone?: string
+  }
+  userId?: string
+}
+
 // ========================================
 // INTERFACES LOGS D'ACTIVITÉ
 // ========================================
@@ -276,10 +310,10 @@ export interface ActivityLogResponse {
   oldData?: any
   newData?: any
   metadata?: any
-  userId?: string
-  user?: UserResponse
-  ipAddress?: string
-  userAgent?: string
+  userId?: string | null
+  user?: UserResponse | null
+  ipAddress?: string | null
+  userAgent?: string | null
   createdAt: string
 }
 
@@ -312,6 +346,45 @@ export interface PaginationParams {
 export interface SearchParams extends PaginationParams {
   search?: string
   filters?: Record<string, any>
+}
+
+// ========================================
+// INTERFACES CLOUDINARY
+// ========================================
+
+export interface CloudinaryUploadResult {
+  public_id: string
+  secure_url: string
+  width: number
+  height: number
+  format: string
+  bytes: number
+  url: string
+  etag: string
+  signature: string
+  version: number
+  version_id: string
+  folder?: string
+}
+
+export interface UploadApiResponse {
+  imageUrl: string
+  publicId: string
+  width: number
+  height: number
+}
+
+// ========================================
+// FONCTION UTILITAIRE POUR PRISMA
+// ========================================
+
+/**
+ * Convertit un nombre en format compatible Prisma (nombre entier)
+ * @param value Valeur à convertir
+ * @returns Nombre entier
+ */
+export function toPrismaNumber(value: number): number {
+  return Math.round(value)
 }
 
 // ========================================

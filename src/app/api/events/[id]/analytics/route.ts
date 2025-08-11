@@ -1,4 +1,5 @@
 // app/api/events/[id]/analytics/route.ts
+import { NextRequest } from 'next/server'
 import { 
   createApiResponse, 
   createApiError, 
@@ -14,6 +15,11 @@ import {
   generateQRCode
 } from '@/lib/api-utils'
 import prisma from '@/lib/prisma'
+
+
+interface RouteParams {
+  params: { id: string }
+}
 
 export async function GET(
   request: NextRequest,
