@@ -1,13 +1,24 @@
-// src/components/EventCard.tsx
+// src/components/EventCard.tsx - VERSION MISE À JOUR
 import Link from 'next/link'
 import Image from 'next/image'
 import { EventResponse } from '@/types/api'
+import { 
+  formatEventPrice, 
+  isEventFree, 
+  getEventActionText,
+  getEventActionButtonClass,
+  getPriceBadgeClass,
+  getEventTypeIcon 
+} from '@/lib/api-utils'
 
 interface EventCardProps {
   event: EventResponse
+  onReserve?: (eventId: string) => void  // Nouveau: pour événements gratuits
+  onPurchase?: (eventId: string) => void // Nouveau: pour événements payants
+  showActions?: boolean // Nouveau: afficher les boutons d'action
 }
 
-export function EventCard({ event }: EventCardProps) {
+export function EventCard({ event, onReserve, onPurchase, showActions = true }: EventCardProps) {
   const formatDate = (dateString: string) => {
     return new Intl.DateTimeFormat('fr-FR', {
       weekday: 'long',
@@ -16,11 +27,6 @@ export function EventCard({ event }: EventCardProps) {
       hour: '2-digit',
       minute: '2-digit'
     }).format(new Date(dateString))
-  }
-
-  const formatPrice = (price: number) => {
-    const priceInFCFA = price / 100
-    return `${priceInFCFA.toLocaleString('fr-FR')} FCFA`
   }
 
   const getAvailabilityColor = (remaining: number, total: number) => {
@@ -52,6 +58,20 @@ export function EventCard({ event }: EventCardProps) {
     )
   }
 
+  // Gérer l'action selon le type d'événement
+  const handleAction = async () => {
+    if (event.statut !== 'ACTIVE' || event.placesRestantes <= 0) return
+
+    if (isEventFree(event.prix) && onReserve) {
+      await onReserve(event.id)
+    } else if (!isEventFree(event.prix) && onPurchase) {
+      await onPurchase(event.id)
+    }
+  }
+
+  const canTakeAction = event.statut === 'ACTIVE' && event.placesRestantes > 0
+  const isFree = isEventFree(event.prix)
+
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200 group">
       {/* Image */}
@@ -72,9 +92,16 @@ export function EventCard({ event }: EventCardProps) {
           </div>
         )}
         
-        {/* Badge de statut */}
+        {/* Badge de statut en haut à droite */}
         <div className="absolute top-3 right-3">
           {getStatusBadge(event.statut)}
+        </div>
+
+        {/* Badge de prix en haut à gauche - NOUVEAU */}
+        <div className="absolute top-3 left-3">
+          <span className={getPriceBadgeClass(event.prix)}>
+            {getEventTypeIcon(event.prix)} {formatEventPrice(event.prix)}
+          </span>
         </div>
       </div>
 
@@ -114,17 +141,33 @@ export function EventCard({ event }: EventCardProps) {
           </div>
         </div>
 
-        {/* Prix et disponibilité */}
-        <div className="flex justify-between items-center mb-4">
-          <div className="text-2xl font-bold text-orange-600">
-            {formatPrice(event.prix)}
+        {/* Disponibilité avec barre de progression */}
+        <div className="mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm font-medium text-gray-700">Places disponibles</span>
+            <span className={`text-sm font-medium ${getAvailabilityColor(event.placesRestantes, event.nbPlaces)}`}>
+              {event.placesRestantes > 0 ? (
+                `${event.placesRestantes} / ${event.nbPlaces}`
+              ) : (
+                'Complet'
+              )}
+            </span>
           </div>
-          <div className={`text-sm font-medium ${getAvailabilityColor(event.placesRestantes, event.nbPlaces)}`}>
-            {event.placesRestantes > 0 ? (
-              `${event.placesRestantes} place${event.placesRestantes > 1 ? 's' : ''} restante${event.placesRestantes > 1 ? 's' : ''}`
-            ) : (
-              'Complet'
-            )}
+          
+          {/* Barre de progression */}
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className={`h-2 rounded-full transition-all duration-300 ${
+                event.placesRestantes > event.nbPlaces * 0.5 
+                  ? 'bg-green-500' 
+                  : event.placesRestantes > event.nbPlaces * 0.2 
+                    ? 'bg-orange-500' 
+                    : 'bg-red-500'
+              }`}
+              style={{ 
+                width: `${Math.max(0, Math.min(100, ((event.nbPlaces - event.placesRestantes) / event.nbPlaces) * 100))}%` 
+              }}
+            ></div>
           </div>
         </div>
 
@@ -149,21 +192,40 @@ export function EventCard({ event }: EventCardProps) {
           </div>
         )}
 
-        {/* Bouton d'action */}
-        <Link
-          href={`/evenements/${event.id}`}
-          className={`block w-full text-center py-2 px-4 rounded-lg font-medium transition-colors ${
-            event.statut === 'ACTIVE' && event.placesRestantes > 0
-              ? 'bg-orange-600 hover:bg-orange-700 text-white'
-              : 'bg-gray-100 text-gray-500 cursor-not-allowed'
-          }`}
-        >
-          {event.statut === 'ACTIVE' ? (
-            event.placesRestantes > 0 ? 'Réserver' : 'Complet'
+        {/* Boutons d'action - AMÉLIORÉS */}
+        <div className="space-y-2">
+          {showActions && (onReserve || onPurchase) ? (
+            // Mode avec actions (réservation/achat)
+            <button
+              onClick={handleAction}
+              disabled={!canTakeAction}
+              className={getEventActionButtonClass(event)}
+            >
+              {getEventActionText(event)}
+            </button>
           ) : (
-            'Indisponible'
+            // Mode navigation simple (lien vers détails)
+            <Link
+              href={`/evenements/${event.id}`}
+              className={`block w-full text-center py-2 px-4 rounded-lg font-medium transition-colors ${
+                canTakeAction
+                  ? isFree 
+                    ? 'bg-green-600 hover:bg-green-700 text-white'
+                    : 'bg-orange-600 hover:bg-orange-700 text-white'
+                  : 'bg-gray-100 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              {canTakeAction ? 'Voir les détails' : 'Indisponible'}
+            </Link>
           )}
-        </Link>
+
+          {/* Message d'aide pour événements gratuits */}
+          {isFree && canTakeAction && (
+            <p className="text-xs text-green-600 text-center">
+              ✨ Réservation gratuite - Aucun paiement requis
+            </p>
+          )}
+        </div>
       </div>
     </div>
   )

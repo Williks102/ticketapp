@@ -446,3 +446,208 @@ export function formatEventPrice(price: number): string {
   }
   return `${(price / 100).toLocaleString('fr-FR')} FCFA`
 }
+
+
+// ✅ Vérifier si un événement est gratuit
+export function isEventFree(price: number): boolean {
+  return price === 0
+}
+
+// ✅ Vérifier si un utilisateur peut réserver un événement gratuit
+export function canReserveFreeEvent(event: any, userId?: string): {
+  canReserve: boolean
+  reason?: string
+} {
+  if (!isEventFree(event.prix)) {
+    return { canReserve: false, reason: 'Événement non gratuit' }
+  }
+
+  if (event.statut !== 'ACTIVE') {
+    return { canReserve: false, reason: 'Événement non disponible' }
+  }
+
+  if (event.placesRestantes <= 0) {
+    return { canReserve: false, reason: 'Plus de places disponibles' }
+  }
+
+  // Vérifier que l'événement n'est pas dans le passé
+  const eventDate = new Date(event.dateDebut)
+  const now = new Date()
+  if (eventDate <= now) {
+    return { canReserve: false, reason: 'Événement déjà passé' }
+  }
+
+  return { canReserve: true }
+}
+
+// ✅ Formater le texte du bouton d'action selon le type d'événement
+export function getEventActionText(event: any, loading: boolean = false): string {
+  if (loading) return 'En cours...'
+  
+  if (event.statut !== 'ACTIVE') return 'Indisponible'
+  if (event.placesRestantes <= 0) return 'Complet'
+  
+  if (isEventFree(event.prix)) {
+    return 'Réserver gratuitement'
+  }
+  
+  return `Acheter - ${formatEventPrice(event.prix)}`
+}
+
+// ✅ Obtenir la classe CSS du bouton d'action
+export function getEventActionButtonClass(event: any, loading: boolean = false): string {
+  const baseClass = "w-full py-2 px-4 rounded-md font-medium text-sm transition-colors duration-200"
+  
+  if (event.statut !== 'ACTIVE' || event.placesRestantes <= 0) {
+    return `${baseClass} bg-gray-300 text-gray-500 cursor-not-allowed`
+  }
+  
+  if (loading) {
+    return `${baseClass} bg-gray-400 text-white cursor-not-allowed`
+  }
+  
+  if (isEventFree(event.prix)) {
+    return `${baseClass} bg-green-600 text-white hover:bg-green-700 focus:ring-2 focus:ring-green-500`
+  }
+  
+  return `${baseClass} bg-blue-600 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500`
+}
+
+// ✅ Obtenir la classe CSS du badge de prix
+export function getPriceBadgeClass(price: number): string {
+  if (isEventFree(price)) {
+    return "inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800"
+  }
+  return "inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800"
+}
+
+// ✅ Filtrer les événements par type de prix
+export function filterEventsByPriceType(
+  events: any[], 
+  priceType: 'all' | 'free' | 'paid'
+): any[] {
+  switch (priceType) {
+    case 'free':
+      return events.filter(event => isEventFree(event.prix))
+    case 'paid':
+      return events.filter(event => !isEventFree(event.prix))
+    case 'all':
+    default:
+      return events
+  }
+}
+
+// ✅ Compter les événements par type de prix
+export function countEventsByPriceType(events: any[]): {
+  total: number
+  free: number
+  paid: number
+} {
+  const total = events.length
+  const free = events.filter(event => isEventFree(event.prix)).length
+  const paid = total - free
+
+  return { total, free, paid }
+}
+
+// ✅ Valider les données d'un événement gratuit avant création
+export function validateFreeEventData(eventData: any): string[] {
+  const errors: string[] = []
+
+  // Validations de base (réutiliser les existantes)
+  const baseErrors = validateRequired(eventData, [
+    'titre', 'description', 'lieu', 'adresse', 
+    'dateDebut', 'dateFin', 'nbPlaces', 'organisateur'
+  ])
+  errors.push(...baseErrors)
+
+  // Validation spécifique pour événement gratuit
+  if (eventData.prix !== 0) {
+    errors.push('Le prix doit être 0 pour un événement gratuit')
+  }
+
+  // Validation des dates
+  const dateDebut = new Date(eventData.dateDebut)
+  const dateFin = new Date(eventData.dateFin)
+  const now = new Date()
+
+  if (dateDebut <= now) {
+    errors.push('La date de début doit être dans le futur')
+  }
+
+  if (dateFin <= dateDebut) {
+    errors.push('La date de fin doit être après la date de début')
+  }
+
+  return errors
+}
+
+// ✅ Générer un message de confirmation pour réservation gratuite
+export function generateFreeReservationMessage(eventTitle: string, ticketNumber: string): string {
+  return `🎉 Félicitations ! Votre billet gratuit pour "${eventTitle}" a été réservé avec succès.
+
+📧 Numéro de billet : ${ticketNumber}
+✅ Votre billet est immédiatement valide
+📱 Vous pouvez le retrouver dans "Mes billets"
+
+Merci de votre intérêt pour cet événement !`
+}
+
+// ✅ Créer les métadonnées pour un log d'activité (réservation gratuite)
+export function createFreeReservationLogData(eventTitle: string, ticketNumber: string) {
+  return {
+    action: 'free_reservation',
+    eventTitle,
+    ticketNumber,
+    amount: 0,
+    type: 'gratuit',
+    timestamp: new Date().toISOString()
+  }
+}
+
+// ========================================
+// UTILITAIRES POUR L'INTERFACE UTILISATEUR
+// ========================================
+
+// ✅ Obtenir l'icône appropriée selon le type d'événement
+export function getEventTypeIcon(price: number): string {
+  return isEventFree(price) ? '✨' : '💰'
+}
+
+// ✅ Obtenir le message d'aide selon le type d'événement
+export function getEventTypeHelpText(price: number): string {
+  if (isEventFree(price)) {
+    return 'Réservation gratuite - Aucun paiement requis'
+  }
+  return `Paiement sécurisé requis - ${formatEventPrice(price)}`
+}
+
+// ✅ Trier les événements avec priorité aux gratuits (optionnel)
+export function sortEventsWithFreePriority(events: any[]): any[] {
+  return [...events].sort((a, b) => {
+    // Gratuits en premier
+    if (isEventFree(a.prix) && !isEventFree(b.prix)) return -1
+    if (!isEventFree(a.prix) && isEventFree(b.prix)) return 1
+    
+    // Puis par date
+    return new Date(a.dateDebut).getTime() - new Date(b.dateDebut).getTime()
+  })
+}
+
+// ========================================
+// VALIDATION ET SANITISATION SPÉCIFIQUE
+// ========================================
+
+// ✅ Nettoyer et valider les données de réservation gratuite
+export function sanitizeFreeReservationData(data: any) {
+  return {
+    eventId: sanitizeString(data.eventId || ''),
+    userId: sanitizeString(data.userId || ''),
+    prix: 0, // Toujours 0 pour gratuit
+    statut: 'VALID',
+    // Pas de données de paiement pour les gratuits
+    guestEmail: data.guestEmail ? sanitizeString(data.guestEmail) : null,
+    guestNom: data.guestNom ? sanitizeString(data.guestNom) : null,
+    guestPrenom: data.guestPrenom ? sanitizeString(data.guestPrenom) : null
+  }
+}

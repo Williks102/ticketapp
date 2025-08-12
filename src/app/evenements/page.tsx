@@ -1,47 +1,51 @@
+// src/app/evenements/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { EventCard } from '@/components/EventCard'
+import EventFilters, { EventFilters as FilterType } from '@/components/EventFilters'
 import { SearchBar } from '@/components/SearchBar'
 import { Navbar } from '@/components/Navbar'
 import { Footer } from '@/components/Footer'
 import { EventResponse } from '@/types/api'
+import { formatEventPrice } from '@/lib/api-utils'
 
-const categories = [
-  { id: 'tous', label: 'Tous les événements' },
-  { id: 'concerts', label: 'Concerts' },
-  { id: 'theatre', label: 'Théâtre' },
-  { id: 'festivals', label: 'Festivals' },
-  { id: 'expositions', label: 'Expositions' },
-  { id: 'spectacles', label: 'Spectacles' },
-  { id: 'gastronomie', label: 'Gastronomie' },
-  { id: 'art', label: 'Art & Culture' }
-]
-
-const sortOptions = [
-  { id: 'date', label: 'Date' },
-  { id: 'prix-asc', label: 'Prix croissant' },
-  { id: 'prix-desc', label: 'Prix décroissant' },
-  { id: 'popularite', label: 'Popularité' }
-]
+interface EventCounts {
+  total: number
+  free: number
+  paid: number
+}
 
 export default function EvenementsPage() {
+  const router = useRouter()
   const [events, setEvents] = useState<EventResponse[]>([])
   const [filteredEvents, setFilteredEvents] = useState<EventResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedCategory, setSelectedCategory] = useState('tous')
-  const [sortBy, setSortBy] = useState('date')
-  const [priceRange, setPriceRange] = useState([0, 10000000]) // Prix en centimes FCFA (0 à 100.000 FCFA)
-  const [showFilters, setShowFilters] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [eventCounts, setEventCounts] = useState<EventCounts>({ total: 0, free: 0, paid: 0 })
+  
+  const [filters, setFilters] = useState<FilterType>({
+    category: 'tous',
+    priceType: 'all',
+    priceRange: [0, 10000000],
+    location: 'Toutes les villes',
+    dateRange: 'all',
+    sortBy: 'date'
+  })
 
-  // Charger les événements depuis la BDD
+  // Charger les événements depuis l'API
   useEffect(() => {
     fetchEvents()
-  }, [currentPage, searchTerm, selectedCategory, sortBy])
+  }, [currentPage, searchTerm])
+
+  // Appliquer les filtres côté client
+  useEffect(() => {
+    applyFilters()
+  }, [events, filters])
 
   const fetchEvents = async () => {
     try {
@@ -50,19 +54,12 @@ export default function EvenementsPage() {
 
       const params = new URLSearchParams({
         page: currentPage.toString(),
-        limit: '12',
-        sortBy: sortBy === 'date' ? 'dateDebut' : sortBy.includes('prix') ? 'prix' : 'dateDebut',
-        sortOrder: sortBy === 'prix-desc' ? 'desc' : 'asc',
+        limit: '20',
         status: 'ACTIVE'
       })
 
       if (searchTerm) {
         params.append('search', searchTerm)
-      }
-
-      if (selectedCategory !== 'tous') {
-        // Filtrer par catégorie côté client pour l'instant
-        // En production, vous pourriez vouloir ajouter ce filtre côté serveur
       }
 
       const response = await fetch(`/api/events?${params}`)
@@ -75,270 +72,332 @@ export default function EvenementsPage() {
       setEvents(data.events || [])
       setTotalPages(data.totalPages || 1)
 
+      // Calculer les statistiques
+      calculateEventCounts(data.events || [])
+
     } catch (err) {
       console.error('Erreur:', err)
       setError(err instanceof Error ? err.message : 'Erreur inconnue')
-      setEvents([])
     } finally {
       setLoading(false)
     }
   }
 
-  // Filtrer et trier les événements côté client
-  useEffect(() => {
+  const calculateEventCounts = (allEvents: EventResponse[]) => {
+    const counts = {
+      total: allEvents.length,
+      free: allEvents.filter(event => event.prix === 0).length,
+      paid: allEvents.filter(event => event.prix > 0).length
+    }
+    setEventCounts(counts)
+  }
+
+  const applyFilters = () => {
     let filtered = [...events]
 
-    // Filtrer par catégorie
-    if (selectedCategory !== 'tous') {
-      filtered = filtered.filter(event => {
-        // Vérifier si l'événement contient la catégorie sélectionnée
-        // Les catégories sont stockées dans un array String[] dans Prisma
-        return event.categories?.some(cat => 
-          cat.toLowerCase().includes(selectedCategory.toLowerCase())
+    // Filtre par type de prix
+    if (filters.priceType === 'free') {
+      filtered = filtered.filter(event => event.prix === 0)
+    } else if (filters.priceType === 'paid') {
+      filtered = filtered.filter(event => event.prix > 0)
+    }
+
+    // Filtre par plage de prix
+    filtered = filtered.filter(event => 
+      event.prix >= filters.priceRange[0] && event.prix <= filters.priceRange[1]
+    )
+
+    // Filtre par catégorie
+    if (filters.category !== 'tous') {
+      filtered = filtered.filter(event => 
+        event.categories?.some(cat => 
+          cat.toLowerCase().includes(filters.category.toLowerCase())
         )
+      )
+    }
+
+    // Filtre par ville
+    if (filters.location !== 'Toutes les villes') {
+      filtered = filtered.filter(event => 
+        event.lieu.toLowerCase().includes(filters.location.toLowerCase()) ||
+        event.adresse.toLowerCase().includes(filters.location.toLowerCase())
+      )
+    }
+
+    // Filtre par date
+    const now = new Date()
+    if (filters.dateRange === 'today') {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const tomorrow = new Date(today)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      
+      filtered = filtered.filter(event => {
+        const eventDate = new Date(event.dateDebut)
+        return eventDate >= today && eventDate < tomorrow
+      })
+    } else if (filters.dateRange === 'week') {
+      const weekFromNow = new Date()
+      weekFromNow.setDate(weekFromNow.getDate() + 7)
+      
+      filtered = filtered.filter(event => {
+        const eventDate = new Date(event.dateDebut)
+        return eventDate >= now && eventDate <= weekFromNow
+      })
+    } else if (filters.dateRange === 'month') {
+      const monthFromNow = new Date()
+      monthFromNow.setMonth(monthFromNow.getMonth() + 1)
+      
+      filtered = filtered.filter(event => {
+        const eventDate = new Date(event.dateDebut)
+        return eventDate >= now && eventDate <= monthFromNow
       })
     }
 
-    // Filtrer par prix
-    filtered = filtered.filter(event => 
-      event.prix >= priceRange[0] && event.prix <= priceRange[1]
-    )
+    // Tri
+    filtered.sort((a, b) => {
+      switch (filters.sortBy) {
+        case 'price_asc':
+          return a.prix - b.prix
+        case 'price_desc':
+          return b.prix - a.prix
+        case 'popularity':
+          return (b.ticketsVendus || 0) - (a.ticketsVendus || 0)
+        case 'date':
+        default:
+          return new Date(a.dateDebut).getTime() - new Date(b.dateDebut).getTime()
+      }
+    })
 
     setFilteredEvents(filtered)
-  }, [events, selectedCategory, priceRange])
+  }
 
   const handleSearch = (term: string) => {
     setSearchTerm(term)
-    setCurrentPage(1) // Reset à la première page
-  }
-
-  const handleCategoryChange = (category: string) => {
-    setSelectedCategory(category)
     setCurrentPage(1)
   }
 
-  const handleSortChange = (sort: string) => {
-    setSortBy(sort)
-    setCurrentPage(1)
+  const handleReserveFree = async (eventId: string) => {
+    try {
+      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken')
+      
+      if (!token) {
+        // Rediriger vers la page de connexion
+        router.push(`/auth/login?redirect=/evenements/${eventId}`)
+        return
+      }
+
+      const response = await fetch('/api/billets/gratuit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ eventId })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Erreur lors de la réservation')
+      }
+
+      const ticket = await response.json()
+      
+      // Afficher un message de succès
+      alert('🎉 Billet gratuit réservé avec succès!')
+      
+      // Rediriger vers les billets de l'utilisateur
+      router.push('/user/mes-billets')
+
+    } catch (error) {
+      console.error('Erreur réservation gratuite:', error)
+      alert(`Erreur: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
+    }
+  }
+
+  const handlePurchasePaid = async (eventId: string) => {
+    try {
+      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken')
+      
+      if (!token) {
+        router.push(`/auth/login?redirect=/evenements/${eventId}`)
+        return
+      }
+
+      // Rediriger vers la page de paiement
+      router.push(`/evenements/${eventId}/achat`)
+
+    } catch (error) {
+      console.error('Erreur achat:', error)
+      alert('Erreur lors de l\'achat')
+    }
+  }
+
+  if (loading) {
+    return (
+      <>
+        <Navbar />
+        <div className="min-h-screen bg-gray-50 py-8">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="animate-pulse">
+              <div className="h-8 bg-gray-200 rounded w-64 mb-6"></div>
+              <div className="bg-gray-200 h-32 rounded-lg mb-6"></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[1, 2, 3, 4, 5, 6].map(i => (
+                  <div key={i} className="bg-gray-200 h-96 rounded-lg"></div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+        <Footer />
+      </>
+    )
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex flex-col">
+      <>
         <Navbar />
-        <main className="flex-1">
-          <div className="container mx-auto px-4 py-8 text-center">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md mx-auto">
-              <svg className="w-12 h-12 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-              </svg>
-              <h2 className="text-lg font-semibold text-red-800 mb-2">Erreur de chargement</h2>
-              <p className="text-red-600 mb-4">{error}</p>
-              <button
-                onClick={() => fetchEvents()}
-                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
-              >
-                Réessayer
-              </button>
+        <div className="min-h-screen bg-gray-50 py-8">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center">
+              <div className="bg-red-50 border border-red-200 rounded-md p-4">
+                <h3 className="text-lg font-medium text-red-800">Erreur de chargement</h3>
+                <p className="text-red-600">{error}</p>
+                <button
+                  onClick={() => fetchEvents()}
+                  className="mt-4 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                >
+                  Réessayer
+                </button>
+              </div>
             </div>
           </div>
-        </main>
+        </div>
         <Footer />
-      </div>
+      </>
     )
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Navigation */}
+    <>
       <Navbar />
-      
-      {/* Contenu principal */}
-      <main className="flex-1">
-        <div className="container mx-auto px-4 py-8">
-          {/* En-tête */}
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Header */}
           <div className="mb-8">
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-800 mb-4">
-              Tous les événements
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">
+              Événements en Côte d'Ivoire
             </h1>
-            <SearchBar onSearch={handleSearch} />
+            <p className="text-gray-600">
+              Découvrez les meilleurs événements, gratuits et payants, près de chez vous
+            </p>
           </div>
 
-          {/* Filtres et tri */}
-          <div className="flex flex-col lg:flex-row gap-8">
-            {/* Sidebar filtres */}
-            <div className="lg:w-64">
-              <div className="lg:hidden mb-4">
-                <button
-                  onClick={() => setShowFilters(!showFilters)}
-                  className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2 text-left flex justify-between items-center hover:bg-gray-50 transition-colors"
-                >
-                  <span>{showFilters ? 'Masquer les filtres' : 'Afficher les filtres'}</span>
-                  <svg 
-                    className={`w-5 h-5 transition-transform ${showFilters ? 'rotate-180' : ''}`} 
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-              </div>
+          {/* Barre de recherche */}
+          <div className="mb-6">
+            <SearchBar
+              onSearch={handleSearch}
+              placeholder="Rechercher un événement, lieu, organisateur..."
+              className="w-full"
+            />
+          </div>
+
+          {/* Filtres */}
+          <EventFilters
+            currentFilters={filters}
+            onFilterChange={setFilters}
+            eventCounts={eventCounts}
+          />
+
+          {/* Résultats */}
+          <div className="mb-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold text-gray-900">
+                {filteredEvents.length} événement{filteredEvents.length > 1 ? 's' : ''} trouvé{filteredEvents.length > 1 ? 's' : ''}
+              </h2>
               
-              <div className={`space-y-6 ${showFilters ? 'block' : 'hidden lg:block'}`}>
-                {/* Catégories */}
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <h3 className="font-semibold text-gray-800 mb-3">Catégories</h3>
-                  <div className="space-y-2">
-                    {categories.map((category) => (
-                      <button
-                        key={category.id}
-                        onClick={() => handleCategoryChange(category.id)}
-                        className={`w-full text-left px-3 py-2 rounded-lg transition-colors ${
-                          selectedCategory === category.id
-                            ? 'bg-orange-100 text-orange-700 font-medium'
-                            : 'hover:bg-gray-100 text-gray-600'
-                        }`}
-                      >
-                        {category.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Tri */}
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <h3 className="font-semibold text-gray-800 mb-3">Trier par</h3>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => handleSortChange(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                  >
-                    {sortOptions.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Filtre prix */}
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <h3 className="font-semibold text-gray-800 mb-3">Prix</h3>
-                  <div className="space-y-3">
-                    <div className="flex justify-between text-sm text-gray-600">
-                      <span>{(priceRange[0] / 100).toLocaleString('fr-FR')} FCFA</span>
-                      <span>{(priceRange[1] / 100).toLocaleString('fr-FR')} FCFA</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="10000000"
-                      step="50000"
-                      value={priceRange[1]}
-                      onChange={(e) => setPriceRange([priceRange[0], parseInt(e.target.value)])}
-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Liste des événements */}
-            <div className="flex-1">
-              {loading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {[...Array(6)].map((_, i) => (
-                    <div key={i} className="bg-white rounded-lg border border-gray-200 p-6 animate-pulse">
-                      <div className="bg-gray-200 h-48 rounded-lg mb-4"></div>
-                      <div className="space-y-3">
-                        <div className="bg-gray-200 h-4 rounded w-3/4"></div>
-                        <div className="bg-gray-200 h-4 rounded w-1/2"></div>
-                        <div className="bg-gray-200 h-4 rounded w-2/3"></div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : filteredEvents.length > 0 ? (
-                <>
-                  {/* Résultats */}
-                  <div className="mb-6 flex justify-between items-center">
-                    <p className="text-gray-600">
-                      {filteredEvents.length} événement{filteredEvents.length > 1 ? 's' : ''} trouvé{filteredEvents.length > 1 ? 's' : ''}
-                    </p>
-                  </div>
-
-                  {/* Grille des événements */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                    {filteredEvents.map((event) => (
-                      <EventCard key={event.id} event={event} />
-                    ))}
-                  </div>
-
-                  {/* Pagination */}
-                  {totalPages > 1 && (
-                    <div className="flex justify-center space-x-2">
-                      <button
-                        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                        disabled={currentPage === 1}
-                        className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
-                      >
-                        Précédent
-                      </button>
-                      
-                      {[...Array(totalPages)].map((_, i) => (
-                        <button
-                          key={i + 1}
-                          onClick={() => setCurrentPage(i + 1)}
-                          className={`px-4 py-2 border rounded-lg transition-colors ${
-                            currentPage === i + 1
-                              ? 'bg-orange-600 text-white border-orange-600'
-                              : 'border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          {i + 1}
-                        </button>
-                      ))}
-                      
-                      <button
-                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                        disabled={currentPage === totalPages}
-                        className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
-                      >
-                        Suivant
-                      </button>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="text-center py-12">
-                  <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <h3 className="text-lg font-medium text-gray-800 mb-2">Aucun événement trouvé</h3>
-                  <p className="text-gray-600 mb-4">
-                    Aucun événement ne correspond à vos critères de recherche.
-                  </p>
-                  <button
-                    onClick={() => {
-                      setSelectedCategory('tous')
-                      setPriceRange([0, 10000000])
-                      setSearchTerm('')
-                      setCurrentPage(1)
-                    }}
-                    className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg transition-colors"
-                  >
-                    Réinitialiser les filtres
-                  </button>
-                </div>
+              {/* Indication des filtres actifs */}
+              {filters.priceType !== 'all' && (
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  filters.priceType === 'free' 
+                    ? 'bg-green-100 text-green-800' 
+                    : 'bg-orange-100 text-orange-800'
+                }`}>
+                  {filters.priceType === 'free' ? '✨ Gratuits uniquement' : '💰 Payants uniquement'}
+                </span>
               )}
             </div>
           </div>
-        </div>
-      </main>
 
-      {/* Footer */}
+          {/* Grille d'événements */}
+          {filteredEvents.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+              {filteredEvents.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  onReserve={handleReserveFree}
+                  onPurchase={handlePurchasePaid}
+                  showActions={true}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <div className="max-w-md mx-auto">
+                <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14-7H5a2 2 0 00-2 2v14c2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2z" />
+                </svg>
+                <h3 className="mt-2 text-sm font-medium text-gray-900">Aucun événement trouvé</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  Essayez de modifier vos critères de recherche ou vos filtres.
+                </p>
+                <button
+                  onClick={() => setFilters({
+                    category: 'tous',
+                    priceType: 'all',
+                    priceRange: [0, 10000000],
+                    location: 'Toutes les villes',
+                    dateRange: 'all',
+                    sortBy: 'date'
+                  })}
+                  className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  Réinitialiser les filtres
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex justify-center items-center space-x-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+              >
+                Précédent
+              </button>
+              
+              <span className="px-3 py-2 text-sm text-gray-700">
+                Page {currentPage} sur {totalPages}
+              </span>
+              
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+              >
+                Suivant
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
       <Footer />
-    </div>
+    </>
   )
 }
