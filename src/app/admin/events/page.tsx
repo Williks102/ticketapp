@@ -1,200 +1,209 @@
+// src/app/admin/events/page.tsx - REMPLACEMENT COMPLET
 'use client'
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { EventResponse, EventStatus } from '@/types/api'
 
-interface Event {
-  id: string
-  titre: string
-  lieu: string
-  dateDebut: Date
-  prix: number
-  nbPlaces: number
-  placesRestantes: number
-  statut: 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE'
+interface EventFilters {
+  search: string
+  status: EventStatus | 'all'
   organisateur: string
-  ticketsVendus: number
-  revenue: number
+  dateFrom: string
+  dateTo: string
 }
 
-// Données d'exemple
-const eventsExemple: Event[] = [
-  {
-    id: '1',
-    titre: 'Concert de Jazz Exceptionnel',
-    lieu: 'Salle de spectacle Le Trianon',
-    dateDebut: new Date('2024-12-15T20:00:00'),
-    prix: 35.00,
-    nbPlaces: 300,
-    placesRestantes: 144,
-    statut: 'ACTIVE',
-    organisateur: 'Jazz & Co',
-    ticketsVendus: 156,
-    revenue: 5460.00
-  },
-  {
-    id: '2',
-    titre: 'Théâtre: Roméo et Juliette',
-    lieu: 'Théâtre Municipal',
-    dateDebut: new Date('2024-12-20T19:30:00'),
-    prix: 28.00,
-    nbPlaces: 200,
-    placesRestantes: 111,
-    statut: 'ACTIVE',
-    organisateur: 'Troupe Théâtrale',
-    ticketsVendus: 89,
-    revenue: 2492.00
-  },
-  {
-    id: '3',
-    titre: 'Festival Rock 2024',
-    lieu: 'Parc des Expositions',
-    dateDebut: new Date('2024-12-25T18:00:00'),
-    prix: 45.00,
-    nbPlaces: 500,
-    placesRestantes: 266,
-    statut: 'ACTIVE',
-    organisateur: 'Rock Events',
-    ticketsVendus: 234,
-    revenue: 10530.00
-  },
-  {
-    id: '4',
-    titre: 'Exposition Art Moderne',
-    lieu: 'Musée des Beaux-Arts',
-    dateDebut: new Date('2024-11-10T14:00:00'),
-    prix: 12.00,
-    nbPlaces: 100,
-    placesRestantes: 0,
-    statut: 'COMPLET',
-    organisateur: 'Musée Municipal',
-    ticketsVendus: 100,
-    revenue: 1200.00
-  },
-  {
-    id: '5',
-    titre: 'Concert Annulé',
-    lieu: 'Zénith Arena',
-    dateDebut: new Date('2024-11-25T21:00:00'),
-    prix: 55.00,
-    nbPlaces: 400,
-    placesRestantes: 400,
-    statut: 'ANNULE',
-    organisateur: 'Live Music Co',
-    ticketsVendus: 0,
-    revenue: 0
-  }
-]
-
 export default function AdminEventsPage() {
-  const [events, setEvents] = useState<Event[]>([])
-  const [filteredEvents, setFilteredEvents] = useState<Event[]>([])
-  const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [sortBy, setSortBy] = useState<string>('date')
-  const [isLoading, setIsLoading] = useState(true)
+  const [events, setEvents] = useState<EventResponse[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [filters, setFilters] = useState<EventFilters>({
+    search: '',
+    status: 'all',
+    organisateur: '',
+    dateFrom: '',
+    dateTo: ''
+  })
+  const [selectedEvents, setSelectedEvents] = useState<Set<string>>(new Set())
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
 
   useEffect(() => {
-    // Simuler le chargement des données
-    setTimeout(() => {
-      setEvents(eventsExemple)
-      setFilteredEvents(eventsExemple)
-      setIsLoading(false)
-    }, 1000)
-  }, [])
+    fetchEvents()
+  }, [filters, currentPage])
 
-  useEffect(() => {
-    let filtered = [...events]
-
-    // Filtrer par terme de recherche
-    if (searchTerm) {
-      filtered = filtered.filter(event =>
-        event.titre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        event.lieu.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        event.organisateur.toLowerCase().includes(searchTerm.toLowerCase())
-      )
+  // 🔑 Fonction pour récupérer le token
+  const getAuthToken = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('token') || sessionStorage.getItem('token')
     }
-
-    // Filtrer par statut
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(event => event.statut === statusFilter)
-    }
-
-    // Trier
-    switch (sortBy) {
-      case 'date':
-        filtered.sort((a, b) => a.dateDebut.getTime() - b.dateDebut.getTime())
-        break
-      case 'title':
-        filtered.sort((a, b) => a.titre.localeCompare(b.titre))
-        break
-      case 'revenue':
-        filtered.sort((a, b) => b.revenue - a.revenue)
-        break
-      case 'tickets':
-        filtered.sort((a, b) => b.ticketsVendus - a.ticketsVendus)
-        break
-    }
-
-    setFilteredEvents(filtered)
-  }, [events, searchTerm, statusFilter, sortBy])
-
-  const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat('fr-FR', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date)
+    return null
   }
 
-  const formatPrice = (price: number) => {
+  // ✅ VRAIE API - Remplacement des données mockées
+  const fetchEvents = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+
+      const token = getAuthToken()
+      if (!token) {
+        setError('Non authentifié')
+        return
+      }
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+
+      // Construction des paramètres de requête
+      const queryParams = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: '20'
+      })
+
+      if (filters.search) queryParams.append('search', filters.search)
+      if (filters.status !== 'all') queryParams.append('status', filters.status)
+      if (filters.organisateur) queryParams.append('organisateur', filters.organisateur)
+      if (filters.dateFrom) queryParams.append('dateFrom', filters.dateFrom)
+      if (filters.dateTo) queryParams.append('dateTo', filters.dateTo)
+
+      console.log('🔄 Chargement des événements...')
+
+      // ✅ APPEL API RÉEL
+      const response = await fetch(`/api/admin/events?${queryParams}`, { headers })
+
+      if (response.status === 401) {
+        setError('Session expirée. Veuillez vous reconnecter.')
+        return
+      }
+
+      if (response.status === 403) {
+        setError('Accès refusé. Permissions insuffisantes.')
+        return
+      }
+
+      if (!response.ok) {
+        throw new Error('Erreur lors du chargement des événements')
+      }
+
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error('Format de réponse invalide')
+      }
+
+      // ✅ DONNÉES RÉELLES
+      setEvents(data.data.events)
+      setTotal(data.data.total)
+      setTotalPages(data.data.totalPages)
+
+      console.log(`✅ ${data.data.events.length} événements chargés avec succès`)
+
+    } catch (err) {
+      console.error('❌ Erreur chargement événements:', err)
+      setError(err instanceof Error ? err.message : 'Erreur de chargement')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 🗑️ Suppression d'événement
+  const handleDeleteEvent = async (eventId: string) => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cet événement ?')) {
+      return
+    }
+
+    try {
+      const token = getAuthToken()
+      if (!token) return
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+
+      const response = await fetch(`/api/admin/events/${eventId}`, {
+        method: 'DELETE',
+        headers
+      })
+
+      if (response.ok) {
+        await fetchEvents() // Recharger la liste
+        alert('Événement supprimé avec succès')
+      } else {
+        const errorData = await response.json()
+        alert(`Erreur: ${errorData.message || 'Impossible de supprimer l\'événement'}`)
+      }
+    } catch (error) {
+      console.error('❌ Erreur suppression:', error)
+      alert('Erreur lors de la suppression')
+    }
+  }
+
+  // 🔄 Fonction de rafraîchissement
+  const handleRefresh = () => {
+    fetchEvents()
+  }
+
+  // 📄 Gestion de la pagination
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+  }
+
+  // 🔍 Gestion des filtres
+  const handleFilterChange = (key: keyof EventFilters, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }))
+    setCurrentPage(1)
+  }
+
+  // 🎨 Badge de statut
+  const getStatusBadge = (status: EventStatus) => {
+    const styles = {
+      DRAFT: 'bg-gray-100 text-gray-800',
+      ACTIVE: 'bg-green-100 text-green-800',
+      INACTIVE: 'bg-yellow-100 text-yellow-800',
+      COMPLET: 'bg-blue-100 text-blue-800',
+      ANNULE: 'bg-red-100 text-red-800',
+      TERMINE: 'bg-purple-100 text-purple-800'
+    }
+    
+    const labels = {
+      DRAFT: 'Brouillon',
+      ACTIVE: 'Actif',
+      INACTIVE: 'Inactif',
+      COMPLET: 'Complet',
+      ANNULE: 'Annulé',
+      TERMINE: 'Terminé'
+    }
+
+    return (
+      <span className={`px-2 py-1 text-xs font-medium rounded-full ${styles[status]}`}>
+        {labels[status]}
+      </span>
+    )
+  }
+
+  // 💰 Formater les montants
+  const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('fr-FR', {
       style: 'currency',
       currency: 'EUR'
-    }).format(price)
+    }).format(amount)
   }
 
-  const getStatusBadge = (statut: string) => {
-    switch (statut) {
-      case 'ACTIVE':
-        return <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">Actif</span>
-      case 'INACTIVE':
-        return <span className="px-2 py-1 bg-gray-100 text-gray-800 text-xs font-medium rounded-full">Inactif</span>
-      case 'COMPLET':
-        return <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-medium rounded-full">Complet</span>
-      case 'ANNULE':
-        return <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-medium rounded-full">Annulé</span>
-      default:
-        return null
-    }
-  }
-
-  const handleDelete = (eventId: string) => {
-    if (confirm('Êtes-vous sûr de vouloir supprimer cet événement ?')) {
-      setEvents(events.filter(e => e.id !== eventId))
-    }
-  }
-
-  const toggleStatus = (eventId: string) => {
-    setEvents(events.map(event => {
-      if (event.id === eventId) {
-        const newStatus = event.statut === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
-        return { ...event, statut: newStatus }
-      }
-      return event
-    }))
-  }
-
-  if (isLoading) {
+  // ⏳ État de chargement
+  if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="p-6">
         <div className="animate-pulse">
-          <div className="h-8 bg-gray-300 rounded w-1/4 mb-6"></div>
-          <div className="space-y-4">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-16 bg-gray-300 rounded"></div>
+          <div className="h-8 bg-gray-200 rounded w-64 mb-6"></div>
+          <div className="bg-gray-200 h-32 rounded-lg mb-6"></div>
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="bg-gray-200 h-24 rounded-lg"></div>
             ))}
           </div>
         </div>
@@ -202,73 +211,203 @@ export default function AdminEventsPage() {
     )
   }
 
+  // ❌ État d'erreur
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <div className="flex items-center">
+            <svg className="w-5 h-5 text-red-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <div className="text-red-800 font-semibold">Erreur de chargement</div>
+              <p className="text-red-600 mt-1">{error}</p>
+            </div>
+          </div>
+          <div className="mt-4">
+            <button 
+              onClick={handleRefresh}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Réessayer
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       {/* En-tête */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Gestion des événements</h1>
-          <p className="text-gray-600">{events.length} événement{events.length > 1 ? 's' : ''} au total</p>
+          <h1 className="text-3xl font-bold text-gray-900">Gestion des Événements</h1>
+          <p className="text-gray-600 mt-1">
+            Gérez tous les événements de votre plateforme ({total} au total)
+          </p>
         </div>
-        
-        <Link href="/admin/events/new" className="btn-primary">
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Nouvel événement
-        </Link>
+        <div className="flex space-x-3">
+          <button 
+            onClick={handleRefresh}
+            className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Actualiser
+          </button>
+          <Link
+            href="/admin/events/create"
+            className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors flex items-center"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Nouvel Événement
+          </Link>
+        </div>
       </div>
 
-      {/* Filtres et recherche */}
+      {/* Filtres */}
       <div className="bg-white rounded-lg shadow p-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Rechercher</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Recherche
+            </label>
             <input
               type="text"
               placeholder="Titre, lieu, organisateur..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="input-field"
+              value={filters.search}
+              onChange={(e) => handleFilterChange('search', e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Statut</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Statut
+            </label>
             <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="input-field"
+              value={filters.status}
+              onChange={(e) => handleFilterChange('status', e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             >
               <option value="all">Tous les statuts</option>
+              <option value="DRAFT">Brouillon</option>
               <option value="ACTIVE">Actif</option>
               <option value="INACTIVE">Inactif</option>
               <option value="COMPLET">Complet</option>
               <option value="ANNULE">Annulé</option>
+              <option value="TERMINE">Terminé</option>
             </select>
           </div>
-          
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Trier par</label>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="input-field"
-            >
-              <option value="date">Date</option>
-              <option value="title">Titre</option>
-              <option value="revenue">Revenus</option>
-              <option value="tickets">Billets vendus</option>
-            </select>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Organisateur
+            </label>
+            <input
+              type="text"
+              placeholder="Nom de l'organisateur"
+              value={filters.organisateur}
+              onChange={(e) => handleFilterChange('organisateur', e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+            />
           </div>
-          
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Date de début
+            </label>
+            <input
+              type="date"
+              value={filters.dateFrom}
+              onChange={(e) => handleFilterChange('dateFrom', e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+            />
+          </div>
+
           <div className="flex items-end">
-            <button className="btn-secondary w-full">
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              Export
+            <button
+              onClick={() => setFilters({
+                search: '',
+                status: 'all',
+                organisateur: '',
+                dateFrom: '',
+                dateTo: ''
+              })}
+              className="w-full bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors"
+            >
+              Réinitialiser
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Statistiques rapides */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-500">Total Événements</p>
+              <p className="text-2xl font-bold text-gray-900">{total}</p>
+            </div>
+            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+              <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-500">Événements Actifs</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {events.filter(e => e.statut === 'ACTIVE').length}
+              </p>
+            </div>
+            <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+              <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-500">Billets Vendus</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {events.reduce((sum, e) => sum + (e.ticketsVendus || 0), 0)}
+              </p>
+            </div>
+            <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
+              <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-500">Revenue Total</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {formatCurrency(events.reduce((sum, e) => sum + (e.revenue || 0), 0) / 100)}
+              </p>
+            </div>
+            <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
+              <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+              </svg>
+            </div>
           </div>
         </div>
       </div>
@@ -283,95 +422,109 @@ export default function AdminEventsPage() {
                   Événement
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
+                  Date & Lieu
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Billets
+                  Organisateur
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Revenus
+                  Prix
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Places
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Statut
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Ventes
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredEvents.map((event) => (
+              {events.map((event) => (
                 <tr key={event.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{event.titre}</div>
-                      <div className="text-sm text-gray-500">{event.lieu}</div>
-                      <div className="text-xs text-gray-400">Par {event.organisateur}</div>
+                    <div className="flex items-center">
+                      {event.image && (
+                        <img
+                          className="h-12 w-12 rounded-lg object-cover mr-4"
+                          src={event.image}
+                          alt={event.titre}
+                        />
+                      )}
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {event.titre}
+                        </div>
+                        <div className="text-sm text-gray-500 truncate max-w-xs">
+                          {event.description}
+                        </div>
+                      </div>
                     </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{formatDate(event.dateDebut)}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
-                      {event.ticketsVendus} / {event.nbPlaces}
+                      {new Date(event.dateDebut).toLocaleDateString('fr-FR', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric'
+                      })}
                     </div>
-                    <div className="text-xs text-gray-500">
-                      {event.placesRestantes} restantes
-                    </div>
+                    <div className="text-sm text-gray-500">{event.lieu}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {event.organisateur}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {formatCurrency(event.prix / 100)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">{formatPrice(event.revenue)}</div>
-                    <div className="text-xs text-gray-500">{formatPrice(event.prix)} / billet</div>
+                    <div className="text-sm text-gray-900">
+                      {event.placesRestantes} / {event.nbPlaces}
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                      <div
+                        className="bg-orange-600 h-2 rounded-full"
+                        style={{
+                          width: `${((event.nbPlaces - event.placesRestantes) / event.nbPlaces) * 100}%`
+                        }}
+                      ></div>
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {getStatusBadge(event.statut)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <div className="flex justify-end space-x-2">
-                      <Link
-                        href={`/admin/events/${event.id}`}
-                        className="text-primary-600 hover:text-primary-900"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                      </Link>
-                      
-                      <Link
-                        href={`/admin/events/${event.id}/edit`}
-                        className="text-gray-600 hover:text-gray-900"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </Link>
-                      
-                      <button
-                        onClick={() => toggleStatus(event.id)}
-                        className={event.statut === 'ACTIVE' ? 'text-yellow-600 hover:text-yellow-900' : 'text-green-600 hover:text-green-900'}
-                      >
-                        {event.statut === 'ACTIVE' ? (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h8m-9-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        )}
-                      </button>
-                      
-                      <button
-                        onClick={() => handleDelete(event.id)}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">
+                      {event.ticketsVendus || 0} billets
                     </div>
+                    <div className="text-sm text-gray-500">
+                      {formatCurrency((event.revenue || 0) / 100)}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                    <Link
+                      href={`/admin/events/${event.id}`}
+                      className="text-orange-600 hover:text-orange-900"
+                    >
+                      Voir
+                    </Link>
+                    <Link
+                      href={`/admin/events/${event.id}/edit`}
+                      className="text-blue-600 hover:text-blue-900"
+                    >
+                      Modifier
+                    </Link>
+                    <button
+                      onClick={() => handleDeleteEvent(event.id)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      Supprimer
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -379,19 +532,71 @@ export default function AdminEventsPage() {
           </table>
         </div>
 
-        {filteredEvents.length === 0 && (
-          <div className="text-center py-12">
-            <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Aucun événement trouvé</h3>
-            <p className="text-gray-500 mb-4">Essayez de modifier vos critères de recherche</p>
-            <Link href="/admin/events/new" className="btn-primary">
-              Créer le premier événement
-            </Link>
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200">
+            <div className="flex-1 flex justify-between">
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Précédent
+              </button>
+              <div className="flex items-center space-x-2">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  const page = currentPage <= 3 ? i + 1 : currentPage - 2 + i
+                  if (page > totalPages) return null
+                  return (
+                    <button
+                      key={page}
+                      onClick={() => handlePageChange(page)}
+                      className={`px-3 py-2 rounded-md text-sm font-medium ${
+                        page === currentPage
+                          ? 'bg-orange-600 text-white'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  )
+                })}
+              </div>
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Suivant
+              </button>
+            </div>
           </div>
         )}
       </div>
+
+      {/* État vide */}
+      {events.length === 0 && !loading && (
+        <div className="text-center py-12">
+          <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">Aucun événement trouvé</h3>
+          <p className="mt-1 text-sm text-gray-500">
+            Commencez par créer votre premier événement.
+          </p>
+          <div className="mt-6">
+            <Link
+              href="/admin/events/create"
+              className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              Créer un événement
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

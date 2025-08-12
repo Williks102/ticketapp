@@ -1,461 +1,467 @@
+// src/app/admin/scanner/page.tsx - REMPLACEMENT COMPLET
 'use client'
 
-import { useState, useEffect } from 'react'
-
-interface ScannedTicket {
-  id: string
-  numeroTicket: string
-  eventTitle: string
-  eventDate: Date
-  holderName: string
-  holderEmail: string
-  prix: number
-  statut: 'VALID' | 'USED' | 'CANCELLED'
-  scannedAt?: Date
-}
+import { useState, useEffect, useRef } from 'react'
+import { TicketResponse, ValidateTicketResponse } from '@/types/api'
 
 interface ScanResult {
   success: boolean
-  ticket?: ScannedTicket
+  ticket?: TicketResponse
   message: string
-}
-
-// Données d'exemple de billets
-const ticketsExemple: Record<string, ScannedTicket> = {
-  'TKT-2024-001234': {
-    id: '1',
-    numeroTicket: 'TKT-2024-001234',
-    eventTitle: 'Concert de Jazz Exceptionnel',
-    eventDate: new Date('2024-12-15T20:00:00'),
-    holderName: 'Marie Dupont',
-    holderEmail: 'marie.dupont@email.com',
-    prix: 35.00,
-    statut: 'VALID'
-  },
-  'TKT-2024-001235': {
-    id: '2',
-    numeroTicket: 'TKT-2024-001235',
-    eventTitle: 'Théâtre: Roméo et Juliette',
-    eventDate: new Date('2024-12-20T19:30:00'),
-    holderName: 'Pierre Martin',
-    holderEmail: 'pierre.martin@email.com',
-    prix: 28.00,
-    statut: 'USED',
-    scannedAt: new Date('2024-12-20T19:15:00')
-  },
-  'TKT-2024-001236': {
-    id: '3',
-    numeroTicket: 'TKT-2024-001236',
-    eventTitle: 'Festival Rock 2024',
-    eventDate: new Date('2024-12-25T18:00:00'),
-    holderName: 'Sophie Bernard',
-    holderEmail: 'sophie.bernard@email.com',
-    prix: 45.00,
-    statut: 'CANCELLED'
-  }
+  timestamp: string
 }
 
 export default function AdminScannerPage() {
-  const [manualCode, setManualCode] = useState('')
-  const [scanResult, setScanResult] = useState<ScanResult | null>(null)
-  const [recentScans, setRecentScans] = useState<ScannedTicket[]>([])
   const [isScanning, setIsScanning] = useState(false)
-  const [scanMode, setScanMode] = useState<'camera' | 'manual'>('manual')
-  const [stats, setStats] = useState({
-    todayScans: 23,
-    validScans: 21,
-    invalidScans: 2,
-    totalRevenue: 1247.00
-  })
+  const [manualCode, setManualCode] = useState('')
+  const [scanResults, setScanResults] = useState<ScanResult[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [hasCamera, setHasCamera] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
 
-  const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat('fr-FR', {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date)
+  useEffect(() => {
+    checkCameraPermission()
+    return () => {
+      stopScanning()
+    }
+  }, [])
+
+  // 🔑 Fonction pour récupérer le token
+  const getAuthToken = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('token') || sessionStorage.getItem('token')
+    }
+    return null
   }
 
-  const formatPrice = (price: number) => {
+  // 📷 Vérifier les permissions de la caméra
+  const checkCameraPermission = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+      setHasCamera(true)
+      stream.getTracks().forEach(track => track.stop()) // Arrêter le stream de test
+    } catch (err) {
+      console.warn('Caméra non disponible:', err)
+      setHasCamera(false)
+    }
+  }
+
+  // 📱 Démarrer le scan par caméra
+  const startScanning = async () => {
+    try {
+      setError(null)
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' } // Utiliser la caméra arrière si disponible
+      })
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        streamRef.current = stream
+        setIsScanning(true)
+      }
+    } catch (err) {
+      console.error('Erreur démarrage caméra:', err)
+      setError('Impossible d\'accéder à la caméra. Vérifiez les permissions.')
+    }
+  }
+
+  // ⏹️ Arrêter le scan
+  const stopScanning = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    setIsScanning(false)
+  }
+
+  // ✅ VRAIE API - Validation de billet
+  const validateTicket = async (ticketCode: string) => {
+    try {
+      setLoading(true)
+      
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('Non authentifié')
+      }
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+
+      console.log('🔄 Validation du billet:', ticketCode)
+
+      // ✅ APPEL API RÉEL
+      const response = await fetch('/api/admin/tickets/validate', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ticketCode })
+      })
+
+      if (response.status === 401) {
+        throw new Error('Session expirée. Veuillez vous reconnecter.')
+      }
+
+      if (response.status === 403) {
+        throw new Error('Accès refusé. Permissions insuffisantes.')
+      }
+
+      const data: { success: boolean; data: ValidateTicketResponse } = await response.json()
+
+      // Ajouter le résultat à l'historique
+      const result: ScanResult = {
+        success: data.data.success,
+        ticket: data.data.ticket,
+        message: data.data.message,
+        timestamp: new Date().toISOString()
+      }
+
+      setScanResults(prev => [result, ...prev.slice(0, 9)]) // Garder les 10 derniers
+
+      // Notification sonore et visuelle
+      if (data.data.success) {
+        playSuccessSound()
+        showNotification('✅ Billet validé avec succès', 'success')
+      } else {
+        playErrorSound()
+        showNotification(`❌ ${data.data.message}`, 'error')
+      }
+
+      console.log('✅ Validation terminée:', data.data.message)
+
+    } catch (err) {
+      console.error('❌ Erreur validation:', err)
+      const errorMessage = err instanceof Error ? err.message : 'Erreur de validation'
+      
+      const result: ScanResult = {
+        success: false,
+        message: errorMessage,
+        timestamp: new Date().toISOString()
+      }
+
+      setScanResults(prev => [result, ...prev.slice(0, 9)])
+      playErrorSound()
+      showNotification(`❌ ${errorMessage}`, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 🔊 Sons de notification
+  const playSuccessSound = () => {
+    const audio = new Audio('/sounds/success.mp3')
+    audio.play().catch(() => {
+      // Fallback si pas de fichier audio
+      const context = new AudioContext()
+      const oscillator = context.createOscillator()
+      oscillator.frequency.value = 800
+      oscillator.connect(context.destination)
+      oscillator.start()
+      oscillator.stop(context.currentTime + 0.2)
+    })
+  }
+
+  const playErrorSound = () => {
+    const audio = new Audio('/sounds/error.mp3')
+    audio.play().catch(() => {
+      // Fallback si pas de fichier audio
+      const context = new AudioContext()
+      const oscillator = context.createOscillator()
+      oscillator.frequency.value = 300
+      oscillator.connect(context.destination)
+      oscillator.start()
+      oscillator.stop(context.currentTime + 0.5)
+    })
+  }
+
+  // 📢 Notifications visuelles
+  const showNotification = (message: string, type: 'success' | 'error') => {
+    // Créer une notification temporaire
+    const notification = document.createElement('div')
+    notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 ${
+      type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+    }`
+    notification.textContent = message
+    document.body.appendChild(notification)
+
+    // Supprimer après 3 secondes
+    setTimeout(() => {
+      document.body.removeChild(notification)
+    }, 3000)
+  }
+
+  // 📝 Validation manuelle
+  const handleManualValidation = () => {
+    if (!manualCode.trim()) return
+    validateTicket(manualCode.trim())
+    setManualCode('')
+  }
+
+  // ⌨️ Gestion du clavier
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleManualValidation()
+    }
+  }
+
+  // 💰 Formater les montants
+  const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('fr-FR', {
       style: 'currency',
       currency: 'EUR'
-    }).format(price)
+    }).format(amount)
   }
 
-  const validateTicket = (ticketCode: string): ScanResult => {
-    // Simuler la validation d'un billet
-    const ticket = ticketsExemple[ticketCode]
-    
-    if (!ticket) {
-      return {
-        success: false,
-        message: 'Billet non trouvé. Vérifiez le code QR ou le numéro de billet.'
-      }
-    }
-
-    if (ticket.statut === 'CANCELLED') {
-      return {
-        success: false,
-        ticket,
-        message: 'Ce billet a été annulé et ne peut pas être utilisé.'
-      }
-    }
-
-    if (ticket.statut === 'USED') {
-      return {
-        success: false,
-        ticket,
-        message: `Ce billet a déjà été utilisé le ${ticket.scannedAt ? formatDate(ticket.scannedAt) : 'date inconnue'}.`
-      }
-    }
-
-    // Vérifier si l'événement est aujourd'hui (simplification)
-    const today = new Date()
-    const eventDate = ticket.eventDate
-    const isToday = today.toDateString() === eventDate.toDateString()
-
-    if (!isToday) {
-      return {
-        success: false,
-        ticket,
-        message: `Ce billet est valide mais l'événement a lieu le ${formatDate(eventDate)}.`
-      }
-    }
-
-    // Marquer le billet comme utilisé
-    ticket.statut = 'USED'
-    ticket.scannedAt = new Date()
-
-    return {
-      success: true,
-      ticket,
-      message: 'Billet validé avec succès ! Accès autorisé.'
-    }
-  }
-
-  const handleManualScan = () => {
-    if (!manualCode.trim()) {
-      setScanResult({
-        success: false,
-        message: 'Veuillez saisir un code de billet.'
-      })
-      return
-    }
-
-    setIsScanning(true)
-    
-    // Simuler un délai de traitement
-    setTimeout(() => {
-      const result = validateTicket(manualCode.trim())
-      setScanResult(result)
-      
-      if (result.success && result.ticket) {
-        setRecentScans(prev => [result.ticket!, ...prev.slice(0, 9)])
-        setStats(prev => ({
-          ...prev,
-          todayScans: prev.todayScans + 1,
-          validScans: prev.validScans + 1,
-          totalRevenue: prev.totalRevenue + result.ticket!.prix
-        }))
-      } else {
-        setStats(prev => ({
-          ...prev,
-          todayScans: prev.todayScans + 1,
-          invalidScans: prev.invalidScans + 1
-        }))
-      }
-      
-      setIsScanning(false)
-      setManualCode('')
-    }, 1000)
-  }
-
-  const handleCameraScan = () => {
-    // Simuler l'ouverture de la caméra
-    alert('Fonctionnalité caméra à implémenter avec une bibliothèque comme react-qr-scanner')
-  }
-
-  const getStatusIcon = (statut: string) => {
-    switch (statut) {
-      case 'VALID':
-        return (
-          <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        )
-      case 'USED':
-        return (
-          <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        )
-      case 'CANCELLED':
-        return (
-          <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        )
-      default:
-        return null
-    }
+  // 🎨 Badge de résultat
+  const getResultBadge = (success: boolean) => {
+    return success ? (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        </svg>
+        Validé
+      </span>
+    ) : (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+        Refusé
+      </span>
+    )
   }
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       {/* En-tête */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800">Scanner de billets</h1>
-        <p className="text-gray-600">Validez les billets à l'entrée des événements</p>
-      </div>
-
-      {/* Statistiques du jour */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h4" />
-                </svg>
-              </div>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Scans aujourd'hui</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.todayScans}</p>
-            </div>
-          </div>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Scanner de Billets</h1>
+          <p className="text-gray-600 mt-1">
+            Validez les billets en scannant le QR code ou en saisissant le numéro
+          </p>
         </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Billets valides</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.validScans}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Billets invalides</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.invalidScans}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                </svg>
-              </div>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Revenus validés</p>
-              <p className="text-2xl font-bold text-gray-900">{formatPrice(stats.totalRevenue)}</p>
-            </div>
-          </div>
+        <div className="flex items-center space-x-2">
+          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+            hasCamera ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+          }`}>
+            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+            </svg>
+            {hasCamera ? 'Caméra disponible' : 'Caméra indisponible'}
+          </span>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Scanner */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="p-6 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-800">Scanner un billet</h3>
-            <div className="mt-4 flex space-x-4">
-              <button
-                onClick={() => setScanMode('manual')}
-                className={`px-4 py-2 text-sm font-medium rounded-lg ${
-                  scanMode === 'manual'
-                    ? 'bg-primary-100 text-primary-700'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                Saisie manuelle
-              </button>
-              <button
-                onClick={() => setScanMode('camera')}
-                className={`px-4 py-2 text-sm font-medium rounded-lg ${
-                  scanMode === 'camera'
-                    ? 'bg-primary-100 text-primary-700'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                Caméra QR
-              </button>
-            </div>
-          </div>
-          
-          <div className="p-6">
-            {scanMode === 'manual' ? (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Section Scanner */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Scanner par caméra */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Scanner QR Code</h2>
+            
+            {hasCamera ? (
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Numéro de billet ou code QR
-                  </label>
-                  <input
-                    type="text"
-                    value={manualCode}
-                    onChange={(e) => setManualCode(e.target.value)}
-                    placeholder="Ex: TKT-2024-001234"
-                    className="input-field"
-                    onKeyPress={(e) => e.key === 'Enter' && handleManualScan()}
+                {/* Zone de scan */}
+                <div className="relative bg-black rounded-lg overflow-hidden" style={{ aspectRatio: '16/9' }}>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-cover"
+                    style={{ display: isScanning ? 'block' : 'none' }}
                   />
-                </div>
-                
-                <button
-                  onClick={handleManualScan}
-                  disabled={isScanning}
-                  className="btn-primary w-full"
-                >
-                  {isScanning ? (
-                    <div className="flex items-center justify-center">
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Validation...
+                  
+                  {!isScanning && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+                      <div className="text-center">
+                        <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        </svg>
+                        <p className="text-gray-500">Cliquez pour démarrer le scanner</p>
+                      </div>
                     </div>
-                  ) : (
-                    'Valider le billet'
                   )}
-                </button>
+
+                  {/* Overlay de visée */}
+                  {isScanning && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-48 h-48 border-2 border-orange-500 border-dashed rounded-lg"></div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Contrôles caméra */}
+                <div className="flex justify-center space-x-4">
+                  {!isScanning ? (
+                    <button
+                      onClick={startScanning}
+                      disabled={loading}
+                      className="bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 transition-colors flex items-center disabled:opacity-50"
+                    >
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M15 14h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Démarrer le Scanner
+                    </button>
+                  ) : (
+                    <button
+                      onClick={stopScanning}
+                      className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors flex items-center"
+                    >
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10l6 6m0-6l-6 6" />
+                      </svg>
+                      Arrêter le Scanner
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="text-center py-8">
-                <div className="w-32 h-32 mx-auto bg-gray-100 rounded-lg flex items-center justify-center mb-4">
-                  <svg className="w-16 h-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h4" />
-                  </svg>
-                </div>
-                <p className="text-gray-600 mb-4">Mode caméra</p>
-                <button onClick={handleCameraScan} className="btn-primary">
-                  Ouvrir la caméra
-                </button>
-                <p className="text-xs text-gray-500 mt-2">
-                  Nécessite l'implémentation d'une bibliothèque QR
-                </p>
-              </div>
-            )}
-
-            {/* Résultat du scan */}
-            {scanResult && (
-              <div className={`mt-6 p-4 rounded-lg ${
-                scanResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
-              }`}>
-                <div className="flex items-start">
-                  <div className="flex-shrink-0">
-                    {scanResult.success ? (
-                      <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    ) : (
-                      <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    )}
-                  </div>
-                  <div className="ml-3">
-                    <h4 className={`text-sm font-medium ${
-                      scanResult.success ? 'text-green-800' : 'text-red-800'
-                    }`}>
-                      {scanResult.success ? 'Billet valide ✓' : 'Billet invalide ✗'}
-                    </h4>
-                    <p className={`text-sm mt-1 ${
-                      scanResult.success ? 'text-green-700' : 'text-red-700'
-                    }`}>
-                      {scanResult.message}
-                    </p>
-                    
-                    {scanResult.ticket && (
-                      <div className="mt-3 text-sm">
-                        <p><strong>Billet:</strong> {scanResult.ticket.numeroTicket}</p>
-                        <p><strong>Événement:</strong> {scanResult.ticket.eventTitle}</p>
-                        <p><strong>Titulaire:</strong> {scanResult.ticket.holderName}</p>
-                        <p><strong>Prix:</strong> {formatPrice(scanResult.ticket.prix)}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636M5.636 18.364l12.728-12.728" />
+                </svg>
+                <p className="text-gray-500">Caméra non disponible</p>
+                <p className="text-sm text-gray-400 mt-1">Utilisez la saisie manuelle ci-dessous</p>
               </div>
             )}
           </div>
-        </div>
 
-        {/* Billets récemment scannés */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="p-6 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-800">Derniers scans</h3>
-          </div>
-          <div className="p-6">
-            <div className="space-y-4">
-              {recentScans.length > 0 ? (
-                recentScans.map((ticket, index) => (
-                  <div key={`${ticket.id}-${index}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      {getStatusIcon(ticket.statut)}
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{ticket.numeroTicket}</p>
-                        <p className="text-xs text-gray-500">{ticket.holderName}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-gray-900">{formatPrice(ticket.prix)}</p>
-                      <p className="text-xs text-gray-500">
-                        {ticket.scannedAt ? formatDate(ticket.scannedAt) : 'Non scanné'}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  <svg className="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h4" />
+          {/* Saisie manuelle */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Saisie Manuelle</h2>
+            <div className="flex space-x-4">
+              <div className="flex-1">
+                <input
+                  type="text"
+                  placeholder="Numéro de billet ou code QR..."
+                  value={manualCode}
+                  onChange={(e) => setManualCode(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-lg"
+                  disabled={loading}
+                />
+              </div>
+              <button
+                onClick={handleManualValidation}
+                disabled={loading || !manualCode.trim()}
+                className="bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 transition-colors flex items-center disabled:opacity-50"
+              >
+                {loading ? (
+                  <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  <p>Aucun billet scanné récemment</p>
-                  <p className="text-sm">Les derniers scans apparaîtront ici</p>
-                </div>
-              )}
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+                <span className="ml-2">Valider</span>
+              </button>
             </div>
           </div>
+
+          {/* Message d'erreur */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex">
+                <svg className="w-5 h-5 text-red-400 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <h3 className="text-sm font-medium text-red-800">Erreur</h3>
+                  <p className="text-sm text-red-700 mt-1">{error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Historique des scans */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Historique des Validations</h2>
+          
+          {scanResults.length === 0 ? (
+            <div className="text-center py-8">
+              <svg className="mx-auto h-8 w-8 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              <p className="text-gray-500 text-sm">Aucune validation effectuée</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {scanResults.map((result, index) => (
+                <div key={index} className={`p-3 rounded-lg border ${
+                  result.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                }`}>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      {getResultBadge(result.success)}
+                      <p className="text-sm text-gray-900 mt-1 font-medium">
+                        {result.message}
+                      </p>
+                      {result.ticket && (
+                        <div className="mt-2 text-xs text-gray-600">
+                          <p><strong>{result.ticket.event.titre}</strong></p>
+                          <p>{result.ticket.numeroTicket}</p>
+                          <p>{formatCurrency(result.ticket.prix)}</p>
+                          {result.ticket.user ? (
+                            <p>{result.ticket.user.prenom} {result.ticket.user.nom}</p>
+                          ) : (
+                            <p>{result.ticket.guestPrenom} {result.ticket.guestNom}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-500 ml-2">
+                      {new Date(result.timestamp).toLocaleTimeString('fr-FR')}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Bouton pour vider l'historique */}
+          {scanResults.length > 0 && (
+            <div className="mt-4 pt-4 border-t">
+              <button
+                onClick={() => setScanResults([])}
+                className="w-full text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                Vider l'historique
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Codes de test */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-        <h4 className="text-lg font-semibold text-blue-800 mb-4">Codes de test disponibles</h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-          <div className="bg-white p-3 rounded border">
-            <p className="font-medium text-green-700">Billet valide</p>
-            <p className="text-gray-600 font-mono">TKT-2024-001234</p>
+      {/* Statistiques du jour */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Statistiques du jour</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-green-600">
+              {scanResults.filter(r => r.success).length}
+            </div>
+            <div className="text-sm text-gray-500">Billets validés</div>
           </div>
-          <div className="bg-white p-3 rounded border">
-            <p className="font-medium text-blue-700">Billet déjà utilisé</p>
-            <p className="text-gray-600 font-mono">TKT-2024-001235</p>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-red-600">
+              {scanResults.filter(r => !r.success).length}
+            </div>
+            <div className="text-sm text-gray-500">Billets refusés</div>
           </div>
-          <div className="bg-white p-3 rounded border">
-            <p className="font-medium text-red-700">Billet annulé</p>
-            <p className="text-gray-600 font-mono">TKT-2024-001236</p>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-gray-900">
+              {scanResults.length}
+            </div>
+            <div className="text-sm text-gray-500">Total scans</div>
           </div>
         </div>
       </div>

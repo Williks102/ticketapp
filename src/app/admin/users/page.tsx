@@ -1,3 +1,4 @@
+// src/app/admin/users/page.tsx - REMPLACEMENT AVEC VRAIES API
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -16,72 +17,6 @@ interface User {
   statut: 'ACTIVE' | 'INACTIVE' | 'BANNED'
 }
 
-// Données d'exemple
-const usersExemple: User[] = [
-  {
-    id: '1',
-    email: 'marie.dupont@email.com',
-    nom: 'Dupont',
-    prenom: 'Marie',
-    telephone: '06 12 34 56 78',
-    role: 'USER',
-    createdAt: new Date('2024-01-15T10:30:00'),
-    lastLogin: new Date('2024-12-08T16:45:00'),
-    ticketsAchetes: 8,
-    totalDepense: 284.00,
-    statut: 'ACTIVE'
-  },
-  {
-    id: '2',
-    email: 'pierre.martin@email.com',
-    nom: 'Martin',
-    prenom: 'Pierre',
-    telephone: '06 98 76 54 32',
-    role: 'USER',
-    createdAt: new Date('2024-03-22T14:20:00'),
-    lastLogin: new Date('2024-12-09T09:15:00'),
-    ticketsAchetes: 15,
-    totalDepense: 567.50,
-    statut: 'ACTIVE'
-  },
-  {
-    id: '3',
-    email: 'admin@simplebillet.com',
-    nom: 'Admin',
-    prenom: 'Super',
-    role: 'ADMIN',
-    createdAt: new Date('2024-01-01T00:00:00'),
-    lastLogin: new Date('2024-12-09T08:30:00'),
-    ticketsAchetes: 0,
-    totalDepense: 0,
-    statut: 'ACTIVE'
-  },
-  {
-    id: '4',
-    email: 'sophie.bernard@email.com',
-    nom: 'Bernard',
-    prenom: 'Sophie',
-    telephone: '06 55 44 33 22',
-    role: 'USER',
-    createdAt: new Date('2024-06-10T11:45:00'),
-    lastLogin: new Date('2024-11-30T19:20:00'),
-    ticketsAchetes: 3,
-    totalDepense: 105.00,
-    statut: 'INACTIVE'
-  },
-  {
-    id: '5',
-    email: 'spam.user@example.com',
-    nom: 'User',
-    prenom: 'Spam',
-    role: 'USER',
-    createdAt: new Date('2024-11-01T12:00:00'),
-    ticketsAchetes: 0,
-    totalDepense: 0,
-    statut: 'BANNED'
-  }
-]
-
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([])
   const [filteredUsers, setFilteredUsers] = useState<User[]>([])
@@ -90,14 +25,87 @@ export default function AdminUsersPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [sortBy, setSortBy] = useState<string>('created')
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // 🔑 Fonction pour récupérer le token
+  const getAuthToken = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('token') || sessionStorage.getItem('token')
+    }
+    return null
+  }
+
+  // ✅ VRAIE API - Chargement des utilisateurs
+  const fetchUsers = async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      const token = getAuthToken()
+      if (!token) {
+        setError('Non authentifié')
+        return
+      }
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+
+      console.log('🔄 Chargement des utilisateurs...')
+
+      const response = await fetch('/api/admin/users?limit=100', { headers })
+
+      if (response.status === 401) {
+        setError('Session expirée. Veuillez vous reconnecter.')
+        return
+      }
+
+      if (response.status === 403) {
+        setError('Accès refusé. Permissions insuffisantes.')
+        return
+      }
+
+      if (!response.ok) {
+        throw new Error('Erreur lors du chargement des utilisateurs')
+      }
+
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error('Format de réponse invalide')
+      }
+
+      // ✅ TRANSFORMATION DES DONNÉES API VERS FORMAT LOCAL
+      const transformedUsers: User[] = data.data.users.map((user: any) => ({
+        id: user.id,
+        email: user.email,
+        nom: user.nom,
+        prenom: user.prenom,
+        telephone: user.telephone,
+        role: user.role,
+        createdAt: new Date(user.createdAt),
+        lastLogin: user.lastLogin ? new Date(user.lastLogin) : undefined,
+        ticketsAchetes: user.stats?.totalTickets || 0,
+        totalDepense: user.stats?.totalSpent || 0,
+        statut: user.statut
+      }))
+
+      setUsers(transformedUsers)
+      setFilteredUsers(transformedUsers)
+
+      console.log(`✅ ${transformedUsers.length} utilisateurs chargés avec succès`)
+
+    } catch (err) {
+      console.error('❌ Erreur chargement utilisateurs:', err)
+      setError(err instanceof Error ? err.message : 'Erreur de chargement')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   useEffect(() => {
-    // Simuler le chargement des données
-    setTimeout(() => {
-      setUsers(usersExemple)
-      setFilteredUsers(usersExemple)
-      setIsLoading(false)
-    }, 1000)
+    fetchUsers()
   }, [])
 
   useEffect(() => {
@@ -184,25 +192,111 @@ export default function AdminUsersPage() {
     }
   }
 
-  const handleStatusChange = (userId: string, newStatus: 'ACTIVE' | 'INACTIVE' | 'BANNED') => {
-    if (confirm(`Êtes-vous sûr de vouloir changer le statut de cet utilisateur ?`)) {
-      setUsers(users.map(user => 
-        user.id === userId ? { ...user, statut: newStatus } : user
-      ))
+  // ✅ VRAIE API - Modification de statut
+  const handleStatusChange = async (userId: string, newStatus: 'ACTIVE' | 'INACTIVE' | 'BANNED') => {
+    if (!confirm(`Êtes-vous sûr de vouloir changer le statut de cet utilisateur ?`)) {
+      return
+    }
+
+    try {
+      const token = getAuthToken()
+      if (!token) return
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ statut: newStatus })
+      })
+
+      if (response.ok) {
+        // Mettre à jour localement
+        setUsers(users.map(user => 
+          user.id === userId ? { ...user, statut: newStatus } : user
+        ))
+        console.log('✅ Statut utilisateur mis à jour')
+      } else {
+        const errorData = await response.json()
+        alert(`Erreur: ${errorData.message || 'Impossible de modifier le statut'}`)
+      }
+    } catch (error) {
+      console.error('❌ Erreur modification statut:', error)
+      alert('Erreur lors de la modification du statut')
     }
   }
 
-  const handleRoleChange = (userId: string, newRole: 'USER' | 'ADMIN') => {
-    if (confirm(`Êtes-vous sûr de vouloir changer le rôle de cet utilisateur ?`)) {
-      setUsers(users.map(user => 
-        user.id === userId ? { ...user, role: newRole } : user
-      ))
+  // ✅ VRAIE API - Modification de rôle
+  const handleRoleChange = async (userId: string, newRole: 'USER' | 'ADMIN') => {
+    if (!confirm(`Êtes-vous sûr de vouloir changer le rôle de cet utilisateur ?`)) {
+      return
+    }
+
+    try {
+      const token = getAuthToken()
+      if (!token) return
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ role: newRole })
+      })
+
+      if (response.ok) {
+        // Mettre à jour localement
+        setUsers(users.map(user => 
+          user.id === userId ? { ...user, role: newRole } : user
+        ))
+        console.log('✅ Rôle utilisateur mis à jour')
+      } else {
+        const errorData = await response.json()
+        alert(`Erreur: ${errorData.message || 'Impossible de modifier le rôle'}`)
+      }
+    } catch (error) {
+      console.error('❌ Erreur modification rôle:', error)
+      alert('Erreur lors de la modification du rôle')
     }
   }
 
-  const handleDelete = (userId: string) => {
-    if (confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ? Cette action est irréversible.')) {
-      setUsers(users.filter(u => u.id !== userId))
+  // ✅ VRAIE API - Suppression d'utilisateur
+  const handleDelete = async (userId: string) => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur ? Cette action est irréversible.')) {
+      return
+    }
+
+    try {
+      const token = getAuthToken()
+      if (!token) return
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers
+      })
+
+      if (response.ok) {
+        // Supprimer localement
+        setUsers(users.filter(u => u.id !== userId))
+        console.log('✅ Utilisateur supprimé')
+      } else {
+        const errorData = await response.json()
+        alert(`Erreur: ${errorData.message || 'Impossible de supprimer l\'utilisateur'}`)
+      }
+    } catch (error) {
+      console.error('❌ Erreur suppression:', error)
+      alert('Erreur lors de la suppression')
     }
   }
 
@@ -221,6 +315,32 @@ export default function AdminUsersPage() {
     )
   }
 
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <div className="flex items-center">
+            <svg className="w-5 h-5 text-red-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <div className="text-red-800 font-semibold">Erreur de chargement</div>
+              <p className="text-red-600 mt-1">{error}</p>
+            </div>
+          </div>
+          <div className="mt-4">
+            <button 
+              onClick={fetchUsers}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Réessayer
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* En-tête */}
@@ -230,11 +350,11 @@ export default function AdminUsersPage() {
           <p className="text-gray-600">{users.length} utilisateur{users.length > 1 ? 's' : ''} au total</p>
         </div>
         
-        <button className="btn-primary">
+        <button className="btn-primary" onClick={fetchUsers}>
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-          Export utilisateurs
+          Actualiser
         </button>
       </div>
 
@@ -313,15 +433,15 @@ export default function AdminUsersPage() {
 
       {/* Filtres et recherche */}
       <div className="bg-white rounded-lg shadow p-6">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Rechercher</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Recherche</label>
             <input
               type="text"
-              placeholder="Email, nom, prénom, téléphone..."
+              placeholder="Nom, email, téléphone..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="input-field"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
           </div>
           
@@ -330,50 +450,41 @@ export default function AdminUsersPage() {
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
-              className="input-field"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
               <option value="all">Tous les rôles</option>
-              <option value="USER">Utilisateur</option>
-              <option value="ADMIN">Administrateur</option>
+              <option value="USER">Utilisateurs</option>
+              <option value="ADMIN">Administrateurs</option>
             </select>
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Statut</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="input-field"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
               <option value="all">Tous les statuts</option>
-              <option value="ACTIVE">Actif</option>
-              <option value="INACTIVE">Inactif</option>
-              <option value="BANNED">Banni</option>
+              <option value="ACTIVE">Actifs</option>
+              <option value="INACTIVE">Inactifs</option>
+              <option value="BANNED">Bannis</option>
             </select>
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Trier par</label>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="input-field"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
               <option value="created">Date d'inscription</option>
               <option value="name">Nom</option>
               <option value="email">Email</option>
-              <option value="spent">Total dépensé</option>
+              <option value="spent">Montant dépensé</option>
               <option value="tickets">Billets achetés</option>
             </select>
-          </div>
-          
-          <div className="flex items-end">
-            <button className="btn-secondary w-full">
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-              Filtrer
-            </button>
           </div>
         </div>
       </div>
