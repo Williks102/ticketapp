@@ -1,10 +1,11 @@
 import { NextRequest } from 'next/server'
 import { createApiResponse, createApiError, authenticateRequest } from '@/lib/api-utils'
+import { JWTPayload } from '@/types/api'
 import prisma from '@/lib/prisma'
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await authenticateRequest(request)
+    const user: JWTPayload | null = await authenticateRequest(request)
     
     if (!user) {
       return createApiError('UNAUTHORIZED', 'Authentification requise', 401)
@@ -31,7 +32,8 @@ export async function GET(request: NextRequest) {
             dateDebut: true, 
             dateFin: true,
             lieu: true,
-            statut: true 
+            statut: true,
+            categories: true  // ✅ AJOUTÉ - C'était ça le problème !
           } 
         } 
       },
@@ -55,10 +57,10 @@ export async function GET(request: NextRequest) {
     const thisMonthTickets = userTickets.filter(t => new Date(t.createdAt) >= thisMonth)
     const thisMonthSpent = thisMonthTickets.reduce((sum, ticket) => sum + Number(ticket.prix), 0)
 
-    // Catégories préférées (basées sur les événements fréquentés)
+    // ✅ CATÉGORIES PRÉFÉRÉES - MAINTENANT ÇA MARCHE !
     const categoryStats = userTickets.reduce((acc: any, ticket) => {
-      const categories = ticket.event.categories || []
-      categories.forEach(cat => {
+      const categories = ticket.event.categories || [] // Maintenant disponible !
+      categories.forEach((cat: string) => {
         acc[cat] = (acc[cat] || 0) + 1
       })
       return acc
@@ -82,7 +84,7 @@ export async function GET(request: NextRequest) {
       thisMonthTickets: thisMonthTickets.length,
       thisMonthSpent,
       
-      // 🎯 Préférences
+      // 🎯 Préférences - MAINTENANT DISPONIBLE
       favoriteCategories,
       averageTicketPrice: totalTickets > 0 ? Math.round(totalSpent / totalTickets) : 0,
       
@@ -92,10 +94,11 @@ export async function GET(request: NextRequest) {
         numeroTicket: ticket.numeroTicket,
         eventTitle: ticket.event.titre,
         eventDate: ticket.event.dateDebut.toISOString(),
-        price: ticket.prix,
+        price: Number(ticket.prix),
         status: ticket.statut,
         venue: ticket.event.lieu,
-        purchaseDate: ticket.createdAt.toISOString()
+        purchaseDate: ticket.createdAt.toISOString(),
+        categories: ticket.event.categories // ✅ MAINTENANT DISPONIBLE
       }))
     }
 

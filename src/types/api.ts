@@ -18,12 +18,11 @@ export interface JWTPayload {
   id: string
   email: string
   role: UserRole
-  nom?: string
-  prenom?: string
-  iat?: number  // issued at (timestamp)
-  exp?: number  // expiration (timestamp)
+  nom: string     // Obligatoire
+  prenom: string  // Obligatoire
+  iat?: number
+  exp?: number
 }
-
 // ========================================
 // INTERFACES UTILISATEUR
 // ========================================

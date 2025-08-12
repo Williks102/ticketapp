@@ -1,5 +1,5 @@
 // app/api/auth/register/route.ts
-import { RegisterRequest, AuthResponse } from '@/types/api'
+import { RegisterRequest, AuthResponse, JWTPayload } from '@/types/api'
 import { NextRequest } from 'next/server'
 import { EventResponse, TicketResponse } from '@/types/api' 
 import { PrismaClient } from '@prisma/client'
@@ -89,15 +89,24 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    // Générer le token JWT
-    const token = generateToken({
-      userId: user.id,
-      email: user.email,
-      role: user.role
-    })
+    const tokenPayload: JWTPayload = {
+  id: user.id,
+  email: user.email,
+  role: user.role,
+  nom: user.nom,      // ✅ AJOUTER
+  prenom: user.prenom // ✅ AJOUTER
+}
+
+    const token = generateToken(tokenPayload)
 
     const response: AuthResponse = {
-      user,
+      user: {
+        id: user.id,
+        email: user.email,
+        nom: user.nom,
+        prenom: user.prenom,
+        role: user.role as 'USER' | 'ADMIN'
+      },
       token
     }
 

@@ -8,7 +8,7 @@ import {
   comparePassword,
   generateToken
 } from '@/lib/api-utils'
-import { LoginRequest, AuthResponse } from '@/types/api'
+import { LoginRequest, AuthResponse, JWTPayload } from '@/types/api'
 
 const prisma = new PrismaClient()
 
@@ -88,12 +88,15 @@ export async function POST(request: NextRequest) {
       data: { lastLogin: new Date() }
     })
 
-    // Générer le token JWT
-    const token = generateToken({
-      id: user.id,
-      email: user.email,
-      role: user.role as 'USER' | 'ADMIN'
-    })
+    const tokenPayload: JWTPayload = {
+  id: user.id,
+  email: user.email,
+  role: user.role,
+  nom: user.nom,      // ✅ AJOUTER
+  prenom: user.prenom // ✅ AJOUTER
+}
+
+    const token = generateToken(tokenPayload)
 
     const response: AuthResponse = {
       user: {

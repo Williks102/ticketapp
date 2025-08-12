@@ -648,3 +648,4 @@ export function sanitizeFreeReservationData(data: any) {
     guestPrenom: data.guestPrenom ? sanitizeString(data.guestPrenom) : null
   }
 }
+
