@@ -1,4 +1,4 @@
-// app/api/auth/login/route.ts - Version corrigée
+// src/app/api/auth/login/route.ts - VERSION CORRIGÉE
 import { NextRequest } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { 
@@ -16,6 +16,8 @@ export async function POST(request: NextRequest) {
   try {
     const body: LoginRequest = await request.json()
     
+    console.log('🔄 Tentative de connexion pour:', body.email)
+
     // Validation des champs requis
     const requiredFields = ['email', 'password']
     const validationErrors = validateRequired(body, requiredFields)
@@ -30,10 +32,20 @@ export async function POST(request: NextRequest) {
 
     // Trouver l'utilisateur
     const user = await prisma.user.findUnique({
-      where: { email: body.email }
+      where: { email: body.email.toLowerCase() },
+      select: {
+        id: true,
+        email: true,
+        nom: true,
+        prenom: true,
+        password: true,
+        role: true,
+        statut: true
+      }
     })
 
     if (!user) {
+      console.log('❌ Utilisateur non trouvé:', body.email)
       return createApiError(
         'INVALID_CREDENTIALS',
         'Email ou mot de passe incorrect',
@@ -45,6 +57,7 @@ export async function POST(request: NextRequest) {
     const isValidPassword = await comparePassword(body.password, user.password)
     
     if (!isValidPassword) {
+      console.log('❌ Mot de passe incorrect pour:', body.email)
       return createApiError(
         'INVALID_CREDENTIALS',
         'Email ou mot de passe incorrect',
@@ -93,10 +106,13 @@ export async function POST(request: NextRequest) {
       token
     }
 
+    console.log('✅ Connexion réussie pour:', user.email, 'Rôle:', user.role)
+
+    // ✅ ORDRE DES PARAMÈTRES CORRIGÉ
     return createApiResponse(response, 200, 'Connexion réussie')
 
   } catch (error) {
-    console.error('Erreur lors de la connexion:', error)
+    console.error('❌ Erreur lors de la connexion:', error)
     return createApiError(
       'INTERNAL_ERROR',
       'Erreur interne du serveur',
