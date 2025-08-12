@@ -1,15 +1,14 @@
-// src/lib/api-utils.ts - VERSION CORRIGÉE COMPLÈTE
+// src/lib/api-utils.ts - VERSION CORRIGÉE FINALE
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import QRCode from 'qrcode'
-import { ApiError, ApiResponse } from '@/types/api'
 
 // Configuration JWT
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'
 
 // ========================================
-// TYPES ET INTERFACES
+// TYPES ET INTERFACES CORRIGÉS
 // ========================================
 
 export interface JWTPayload {
@@ -235,7 +234,7 @@ export function validateUserData(data: any): string[] {
 }
 
 // ========================================
-// GÉNÉRATION DE BILLETS
+// GÉNÉRATION DE BILLETS - CORRIGÉE
 // ========================================
 
 export function generateTicketNumber(prefix: string = 'TKT'): string {
@@ -244,6 +243,7 @@ export function generateTicketNumber(prefix: string = 'TKT'): string {
   return `${prefix}-${timestamp}-${random}`
 }
 
+// ❌ FONCTION CORRIGÉE - était "void & Promise<string>"
 export async function generateQRCode(ticketData: any): Promise<string> {
   try {
     const dataString = JSON.stringify({
@@ -254,7 +254,8 @@ export async function generateQRCode(ticketData: any): Promise<string> {
       timestamp: ticketData.timestamp || Date.now()
     })
     
-    return await QRCode.toDataURL(dataString, {
+    // ❌ CORRIGÉ : QRCode.toDataURL retourne Promise<string>, pas void
+    const qrCodeDataUrl = await QRCode.toDataURL(dataString, {
       errorCorrectionLevel: 'M',
       type: 'image/png',
       quality: 0.92,
@@ -265,6 +266,8 @@ export async function generateQRCode(ticketData: any): Promise<string> {
       },
       width: 256
     })
+    
+    return qrCodeDataUrl
   } catch (error) {
     console.error('Erreur lors de la génération du QR code:', error)
     throw new Error('Impossible de générer le QR code')
@@ -284,7 +287,7 @@ export function getPaginationParams(searchParams: URLSearchParams) {
 }
 
 // ========================================
-// UTILITAIRES DIVERS
+// UTILITAIRES DIVERS CORRIGÉS
 // ========================================
 
 export function toPrismaNumber(value: number | string): number {

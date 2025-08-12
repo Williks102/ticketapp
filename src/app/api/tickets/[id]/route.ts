@@ -98,7 +98,7 @@ export async function GET(
         prenom: ticket.user.prenom,
         email: ticket.user.email
       } : undefined,
-      guestInfo: !ticket.user ? {
+      guestNom: !ticket.user ? {
         email: ticket.guestEmail || '',
         nom: ticket.guestNom || '',
         prenom: ticket.guestPrenom || '',

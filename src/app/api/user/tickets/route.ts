@@ -1,34 +1,27 @@
-// app/api/user/tickets/route.ts
 import { NextRequest } from 'next/server'
-import { 
-  createApiResponse, 
-  createApiError,
-  authenticateRequest
-} from '@/lib/api-utils'
+import { createApiResponse, createApiError, authenticateRequest, getPaginationParams } from '@/lib/api-utils'
 import prisma from '@/lib/prisma'
-import { TicketsListResponse, TicketResponse } from '@/types/api'
+import { TicketResponse, TicketsListResponse } from '@/types/api'
 
-// GET - Récupérer les billets de l'utilisateur connecté
 export async function GET(request: NextRequest) {
   try {
     const user = await authenticateRequest(request)
+    
     if (!user) {
-      return createApiError('UNAUTHORIZED', 'Non autorisé', 401)
+      return createApiError('UNAUTHORIZED', 'Authentification requise', 401)
     }
 
-    const userId = user.userId
     const { searchParams } = new URL(request.url)
+    const { page, limit, skip } = getPaginationParams(searchParams)
     
-    // Paramètres de pagination et filtres
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 50)
-    const status = searchParams.get('status') // 'upcoming', 'past', 'all'
+    // Filtres
+    const status = searchParams.get('status') // 'upcoming', 'past', 'used', 'valid', 'all'
     const search = searchParams.get('search')
     const eventId = searchParams.get('eventId')
 
-    // Construction des filtres
+    // Construction des filtres - SEULEMENT SES BILLETS
     const where: any = {
-      userId: userId
+      userId: user.userId // 🔒 Sécurité : seulement ses billets
     }
 
     if (eventId) {
@@ -46,21 +39,17 @@ export async function GET(request: NextRequest) {
     // Filtres par statut temporel
     const now = new Date()
     if (status === 'upcoming') {
-      where.event = {
-        dateDebut: { gt: now }
-      }
+      where.event = { dateDebut: { gt: now } }
       where.statut = { in: ['VALID'] }
     } else if (status === 'past') {
-      where.OR = [
-        { event: { dateDebut: { lte: now } } },
-        { statut: { in: ['USED', 'CANCELLED'] } }
-      ]
+      where.event = { dateFin: { lte: now } }
+    } else if (status === 'used') {
+      where.statut = 'USED'
+    } else if (status === 'valid') {
+      where.statut = 'VALID'
     }
 
-    // Calculs de pagination
-    const skip = (page - 1) * limit
-
-    // Récupérer les billets avec les informations de l'événement
+    // Récupérer les billets avec pagination
     const [tickets, total] = await Promise.all([
       prisma.ticket.findMany({
         where,
@@ -76,7 +65,8 @@ export async function GET(request: NextRequest) {
               dateFin: true,
               organisateur: true,
               image: true,
-              categories: true
+              categories: true,
+              statut: true
             }
           }
         },
@@ -90,8 +80,8 @@ export async function GET(request: NextRequest) {
       prisma.ticket.count({ where })
     ])
 
-    // Formatage des données
-    const formattedTickets: TicketResponse[] = tickets.map(ticket => ({
+    // Formatage sécurisé des données
+    const ticketsResponse: TicketResponse[] = tickets.map(ticket => ({
       id: ticket.id,
       numeroTicket: ticket.numeroTicket,
       qrCode: ticket.qrCode,
@@ -100,17 +90,34 @@ export async function GET(request: NextRequest) {
       validatedAt: ticket.validatedAt?.toISOString() || null,
       validatedBy: ticket.validatedBy || null,
       createdAt: ticket.createdAt.toISOString(),
+      updatedAt: ticket.updatedAt.toISOString(),
       event: {
         id: ticket.event.id,
         titre: ticket.event.titre,
+        description: ticket.event.description,
         lieu: ticket.event.lieu,
+        adresse: ticket.event.adresse,
         dateDebut: ticket.event.dateDebut.toISOString(),
-        dateFin: ticket.event.dateFin.toISOString()
-      }
+        dateFin: ticket.event.dateFin.toISOString(),
+        organisateur: ticket.event.organisateur,
+        image: ticket.event.image,
+        categories: ticket.event.categories,
+        statut: ticket.event.statut,
+        prix: ticket.prix, // Prix du billet acheté
+        nbPlaces: 0, // Pas besoin pour l'utilisateur
+        placesRestantes: 0, // Pas besoin pour l'utilisateur
+        createdAt: '',
+        updatedAt: ''
+      },
+      user: null, // Pas besoin de ses propres infos
+      guestEmail: null,
+      guestNom: null,
+      guestPrenom: null,
+      guestTelephone: null
     }))
 
     const response: TicketsListResponse = {
-      tickets: formattedTickets,
+      tickets: ticketsResponse,
       total,
       page,
       totalPages: Math.ceil(total / limit)
@@ -119,8 +126,8 @@ export async function GET(request: NextRequest) {
     return createApiResponse(response)
 
   } catch (error) {
-    console.error('Erreur récupération billets utilisateur:', error)
-    return createApiError('INTERNAL_ERROR', 'Erreur interne du serveur', 500)
+    console.error('❌ Erreur API user tickets:', error)
+    return createApiError('INTERNAL_ERROR', 'Erreur serveur', 500)
   } finally {
     await prisma.$disconnect()
   }

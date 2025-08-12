@@ -27,6 +27,35 @@ export interface UserResponse {
   lastLogin?: string | null
 }
 
+
+export interface RegisterRequest {
+  email: string
+  nom: string
+  prenom: string
+  telephone?: string
+  password: string
+  role?: UserRole
+}
+
+export interface AuthResponse {
+  user: {
+    id: string
+    email: string
+    nom: string
+    prenom: string
+    role: UserRole
+  }
+  token: string
+}
+
+export interface UserStats {
+  totalTickets: number
+  totalSpent: number
+  eventsAttended: number
+  upcomingEvents: number
+}
+
+
 export interface CreateUserRequest {
   email: string
   nom: string
@@ -144,9 +173,37 @@ export interface TicketResponse {
   createdAt: string
   updatedAt: string  // ← AJOUTÉ
   
-  // Relations
-  event: EventResponse
-  user?: UserResponse | null
+  // Relations - SIMPLIFIÉES pour éviter les erreurs circulaires
+  event: {
+    id: string
+    titre: string
+    lieu: string
+    adresse?: string
+    dateDebut: string
+    dateFin: string
+    prix?: number
+    nbPlaces?: number
+    placesRestantes?: number
+    statut?: EventStatus
+    organisateur?: string
+    description?: string
+    image?: string | null
+    categories?: string[]
+    createdAt?: string
+    updatedAt?: string
+  }
+  user?: {
+    id: string
+    email: string
+    nom: string
+    prenom: string
+    telephone?: string | null
+    role?: UserRole
+    statut?: UserStatus
+    createdAt?: string
+    updatedAt?: string
+    lastLogin?: string | null
+  } | null
   
   // Info invité (si pas d'utilisateur)
   guestEmail?: string | null
@@ -155,11 +212,47 @@ export interface TicketResponse {
   guestTelephone?: string | null
 }
 
+// Version simplifiée de UserResponse pour TicketResponse
+export interface UserResponseSimple {
+  id: string
+  email: string
+  nom: string
+  prenom: string
+  telephone?: string | null
+  role?: UserRole
+  statut?: UserStatus
+  createdAt?: string
+  updatedAt?: string
+  lastLogin?: string | null
+}
+
 export interface TicketsListResponse {
   tickets: TicketResponse[]
   total: number
   page: number
   totalPages: number
+}
+
+export interface TicketResponseCorrected {
+  id: string
+  numeroTicket: string
+  qrCode: string
+  statut: TicketStatus
+  prix: number
+  validatedAt?: string | null
+  validatedBy?: string | null
+  createdAt: string
+  updatedAt: string
+  
+  // Relations simplifiées
+  event: EventResponse
+  user?: UserResponseSimple | null
+  
+  // Info invité
+  guestEmail?: string | null
+  guestNom?: string | null
+  guestPrenom?: string | null
+  guestTelephone?: string | null
 }
 
 export interface CreateTicketRequest {
