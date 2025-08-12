@@ -1,4 +1,4 @@
-// src/types/api.ts - VERSION CORRIGÉE COMPLÈTE
+// src/types/api.ts - VERSION COMPLÈTE CORRIGÉE AVEC JWT
 // ========================================
 // TYPES DE BASE
 // ========================================
@@ -9,6 +9,20 @@ export type EventStatus = 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE'
 export type TicketStatus = 'VALID' | 'USED' | 'CANCELLED' | 'EXPIRED'
 export type PaymentStatus = 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'REFUNDED' | 'PARTIALLY_REFUNDED'
 export type ActivityType = 'USER_ACTION' | 'ADMIN_ACTION' | 'SYSTEM_ACTION' | 'PAYMENT_ACTION' | 'VALIDATION_ACTION'
+
+// ========================================
+// ✅ INTERFACE JWT - AJOUTÉE
+// ========================================
+
+export interface JWTPayload {
+  id: string
+  email: string
+  role: UserRole
+  nom?: string
+  prenom?: string
+  iat?: number  // issued at (timestamp)
+  exp?: number  // expiration (timestamp)
+}
 
 // ========================================
 // INTERFACES UTILISATEUR
@@ -27,6 +41,19 @@ export interface UserResponse {
   lastLogin?: string | null
 }
 
+export interface User {
+  id: string
+  email: string
+  nom: string
+  prenom: string
+  telephone?: string | null
+  role: UserRole
+  statut: UserStatus
+  password?: string  // Pour les opérations internes uniquement
+  createdAt: Date
+  updatedAt: Date
+  lastLogin?: Date | null
+}
 
 export interface RegisterRequest {
   email: string
@@ -45,7 +72,7 @@ export interface AuthResponse {
     prenom: string
     role: UserRole
   }
-  token: string
+  token: string // Ce token encode un JWTPayload
 }
 
 export interface UserStats {
@@ -54,7 +81,6 @@ export interface UserStats {
   eventsAttended: number
   upcomingEvents: number
 }
-
 
 export interface CreateUserRequest {
   email: string
@@ -81,7 +107,7 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   user: UserResponse
-  token: string
+  token: string // Ce token encode un JWTPayload
   expiresIn: number
 }
 
@@ -159,7 +185,7 @@ export interface UpdateEventRequest {
 }
 
 // ========================================
-// INTERFACES BILLETS - CORRIGÉES
+// INTERFACES BILLETS
 // ========================================
 
 export interface TicketResponse {
@@ -171,9 +197,9 @@ export interface TicketResponse {
   validatedAt?: string | null
   validatedBy?: string | null
   createdAt: string
-  updatedAt: string  // ← AJOUTÉ
+  updatedAt: string
   
-  // Relations - SIMPLIFIÉES pour éviter les erreurs circulaires
+  // Relations
   event: {
     id: string
     titre: string
@@ -212,47 +238,11 @@ export interface TicketResponse {
   guestTelephone?: string | null
 }
 
-// Version simplifiée de UserResponse pour TicketResponse
-export interface UserResponseSimple {
-  id: string
-  email: string
-  nom: string
-  prenom: string
-  telephone?: string | null
-  role?: UserRole
-  statut?: UserStatus
-  createdAt?: string
-  updatedAt?: string
-  lastLogin?: string | null
-}
-
 export interface TicketsListResponse {
   tickets: TicketResponse[]
   total: number
   page: number
   totalPages: number
-}
-
-export interface TicketResponseCorrected {
-  id: string
-  numeroTicket: string
-  qrCode: string
-  statut: TicketStatus
-  prix: number
-  validatedAt?: string | null
-  validatedBy?: string | null
-  createdAt: string
-  updatedAt: string
-  
-  // Relations simplifiées
-  event: EventResponse
-  user?: UserResponseSimple | null
-  
-  // Info invité
-  guestEmail?: string | null
-  guestNom?: string | null
-  guestPrenom?: string | null
-  guestTelephone?: string | null
 }
 
 export interface CreateTicketRequest {
@@ -268,40 +258,42 @@ export interface CreateTicketRequest {
 }
 
 // ========================================
-// INTERFACES ACHAT DE BILLETS - CORRIGÉES
+// INTERFACES ACHAT DE BILLETS
 // ========================================
 
 export interface PurchaseTicketRequest {
   eventId: string
   quantity: number
-  userInfo: {  // ← CORRIGÉ : était "customerInfo"
+  userInfo: {
     email: string
     nom: string
     prenom: string
     telephone?: string
   }
   userId?: string
-  guestPurchase?: boolean    // ← AJOUTÉ
-  createAccount?: boolean    // ← AJOUTÉ
-  password?: string          // ← AJOUTÉ
+  guestPurchase?: boolean
+  createAccount?: boolean
+  password?: string
 }
 
 // ========================================
-// INTERFACES VALIDATION - CORRIGÉES
+// INTERFACES VALIDATION
 // ========================================
 
 export interface ValidateTicketRequest {
-  ticketCode: string      // ← CORRIGÉ : était "numeroTicket"
+  ticketCode: string
   validatedBy?: string
+  location?: string
 }
 
 export interface ValidateTicketResponse {
   success: boolean
   ticket?: TicketResponse
   message: string
-  validationInfo?: {      // ← AJOUTÉ
+  validationInfo?: {
     validatedAt: string
     validatedBy: string
+    location?: string
   }
 }
 
@@ -457,7 +449,7 @@ export interface SearchParams extends PaginationParams {
 }
 
 // ========================================
-// INTERFACES CLOUDINARY - CORRIGÉES
+// INTERFACES CLOUDINARY
 // ========================================
 
 export interface CloudinaryUploadResult {
@@ -473,97 +465,92 @@ export interface CloudinaryUploadResult {
   version: number
   version_id: string
   folder?: string
-  created_at?: string        // ← AJOUTÉ
-  resource_type?: string     // ← AJOUTÉ
+  created_at?: string
+  resource_type?: string
+  access_mode?: string
 }
 
-export interface UploadApiResponse {
-  imageUrl: string
-  publicId: string
-  width: number
-  height: number
+export interface CloudinaryUploadResponse {
+  success: boolean
+  data?: CloudinaryUploadResult
+  error?: string
 }
 
 // ========================================
-// FONCTION UTILITAIRE POUR PRISMA
+// INTERFACES RÉPONSES API STANDARDISÉES
 // ========================================
 
-/**
- * Convertit un nombre en format compatible Prisma (nombre entier)
- * @param value Valeur à convertir
- * @returns Nombre entier
- */
-export function toPrismaNumber(value: number | string): number {
-  if (typeof value === 'string') {
-    const parsed = parseInt(value, 10)
-    return isNaN(parsed) ? 0 : parsed
+export interface ApiSuccessResponse<T = any> {
+  success: true
+  data: T
+  message?: string
+  timestamp: string
+}
+
+export interface ApiErrorResponse {
+  success: false
+  error: {
+    type: string
+    message: string
+    details?: string[]
   }
-  return Math.round(value)
+  timestamp: string
 }
 
 // ========================================
-// UTILITAIRES MONÉTAIRES FCFA
+// TYPES UTILITAIRES
 // ========================================
 
-/**
- * Formate un prix en centimes de FCFA vers un affichage lisible
- * @param priceInCents Prix en centimes de FCFA
- * @returns String formaté (ex: "21 000 FCFA")
- */
-export function formatPrice(priceInCents: number): string {
-  const priceInFCFA = priceInCents / 100
-  return `${priceInFCFA.toLocaleString('fr-FR')} FCFA`
+export type ApiResponseType<T> = ApiSuccessResponse<T> | ApiErrorResponse
+
+// Type pour les réponses avec pagination
+export interface PaginatedResponse<T> {
+  items: T[]
+  total: number
+  page: number
+  totalPages: number
+  hasNext: boolean
+  hasPrev: boolean
 }
 
-/**
- * Formate un prix avec le symbole de devise international
- * @param priceInCents Prix en centimes de FCFA
- * @returns String formaté avec Intl.NumberFormat
- */
-export function formatPriceIntl(priceInCents: number): string {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'XOF',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }).format(priceInCents / 100)
-}
-
-/**
- * Convertit un prix en FCFA vers des centimes
- * @param fcfaPrice Prix en FCFA
- * @returns Prix en centimes
- */
-export function parsePriceToMoney(fcfaPrice: number): number {
-  return Math.round(fcfaPrice * 100)
-}
-
-/**
- * Convertit des centimes vers des FCFA
- * @param priceInCents Prix en centimes
- * @returns Prix en FCFA
- */
-export function centsToFCFA(priceInCents: number): number {
-  return priceInCents / 100
+// Type pour les filtres de recherche avancée
+export interface AdvancedSearchFilters {
+  dateRange?: {
+    start: string
+    end: string
+  }
+  priceRange?: {
+    min: number
+    max: number
+  }
+  categories?: string[]
+  locations?: string[]
+  statuses?: string[]
 }
 
 // ========================================
-// UTILITAIRES DATES
+// TYPES DE VALIDATION
 // ========================================
 
-/**
- * Formate une date d'événement
- * @param dateString Date ISO string
- * @returns Date formatée (ex: "lundi 15 décembre 2025 à 20:00")
- */
-export function formatEventDate(dateString: string): string {
-  return new Intl.DateTimeFormat('fr-FR', {
-    weekday: 'long',
-    year: 'numeric', 
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Africa/Abidjan'
-  }).format(new Date(dateString))
+export interface ValidationError {
+  field: string
+  message: string
+  code: string
+}
+
+export interface ValidationResponse {
+  valid: boolean
+  errors?: ValidationError[]
+}
+
+// ========================================
+// EXPORTS PAR DÉFAUT
+// ========================================
+
+export default interface APITypes {
+  JWTPayload: JWTPayload
+  UserResponse: UserResponse
+  EventResponse: EventResponse
+  TicketResponse: TicketResponse
+  ApiResponse: ApiResponse
 }

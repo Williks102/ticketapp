@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import QRCode from 'qrcode'
+import { JWTPayload } from '@/types/api'
 
 // ========================================
 // CONSTANTES ET CONFIGURATION
@@ -17,11 +18,7 @@ const SALT_ROUNDS = 12
 // TYPES ET INTERFACES
 // ========================================
 
-interface JWTPayload {
-  userId: string
-  email: string
-  role: string
-}
+
 
 interface ApiErrorResponse {
   success: false

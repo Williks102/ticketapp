@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
 
     // Récupérer les informations du profil
     const userProfile = await prisma.user.findUnique({
-      where: { id: user.userId },
+      where: { id: user.id },
       select: {
         id: true,
         email: true,
@@ -91,7 +91,7 @@ export async function PUT(request: NextRequest) {
       const existingUser = await prisma.user.findFirst({
         where: { 
           email: body.email,
-          id: { not: user.userId }
+          id: { not: user.id }
         }
       })
       
@@ -109,7 +109,7 @@ export async function PUT(request: NextRequest) {
     // Gestion du changement de mot de passe
     if (body.currentPassword && body.newPassword) {
       const currentUser = await prisma.user.findUnique({
-        where: { id: user.userId },
+        where: { id: user.id },
         select: { password: true }
       })
       
@@ -137,7 +137,7 @@ export async function PUT(request: NextRequest) {
 
     // Mettre à jour le profil
     const updatedUser = await prisma.user.update({
-      where: { id: user.userId },
+      where: { id: user.id },
       data: updateData,
       select: {
         id: true,

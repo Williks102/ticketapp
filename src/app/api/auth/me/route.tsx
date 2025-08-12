@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     // Récupérer les informations complètes de l'utilisateur
     const userData = await prisma.user.findUnique({
-      where: { id: user.userId },
+      where: { id: user.id },
       select: {
         id: true,
         email: true,

@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
 
     // Mettre à jour le mot de passe
     await prisma.user.update({
-      where: { id: decoded.userId },
+      where: { id: decoded.id },
       data: { 
         password: hashedPassword,
         updatedAt: new Date()

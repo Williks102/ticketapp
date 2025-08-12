@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
     // Construction des filtres - SEULEMENT SES BILLETS
     const where: any = {
-      userId: user.userId // 🔒 Sécurité : seulement ses billets
+      userId: user.id // 🔒 Sécurité : seulement ses billets
     }
 
     if (eventId) {

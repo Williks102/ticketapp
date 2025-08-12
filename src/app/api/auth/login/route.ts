@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
     // Générer le token JWT
     const token = generateToken({
-      userId: user.id,
+      id: user.id,
       email: user.email,
       role: user.role as 'USER' | 'ADMIN'
     })

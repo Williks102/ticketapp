@@ -1,17 +1,23 @@
-// src/app/api/admin/users/route.ts
+// src/app/api/admin/users/route.ts - VERSION COMPLÈTE CORRIGÉE
 import { NextRequest } from 'next/server'
-import { createApiResponse, createApiError, authenticateRequest, requireAdmin } from '@/lib/api-utils'
-import prisma from '@/lib/prisma'
+import { PrismaClient } from '@prisma/client'
+import { 
+  createApiResponse, 
+  createApiError, 
+  authenticateRequest, 
+  requireAdmin,
+  hashPassword,
+  validateEmail,
+  validateRequired 
+} from '@/lib/api-utils'
+import { JWTPayload } from '@/types/api'
 
-// src/app/api/admin/users/route.ts
-import { NextRequest } from 'next/server'
-import { createApiResponse, createApiError, authenticateRequest, requireAdmin } from '@/lib/api-utils'
-import prisma from '@/lib/prisma'
+const prisma = new PrismaClient()
 
-// GET /api/admin/users - Liste des utilisateurs
+// GET /api/admin/users - Liste des utilisateurs avec statistiques
 export async function GET(request: NextRequest) {
   try {
-    const user = await authenticateRequest(request)
+    const user: JWTPayload | null = await authenticateRequest(request)
     
     if (!user || !requireAdmin(user)) {
       return createApiError('FORBIDDEN', 'Accès réservé aux administrateurs', 403)
@@ -40,11 +46,11 @@ export async function GET(request: NextRequest) {
       ]
     }
 
-    if (role) {
+    if (role && role !== 'all') {
       whereConditions.role = role
     }
 
-    if (status) {
+    if (status && status !== 'all') {
       whereConditions.statut = status
     }
 
@@ -68,7 +74,11 @@ export async function GET(request: NextRequest) {
           lastLogin: true,
           tickets: {
             where: { statut: { not: 'CANCELLED' } },
-            select: { prix: true, createdAt: true }
+            select: { 
+              prix: true, 
+              createdAt: true,
+              statut: true 
+            }
           }
         }
       }),
@@ -80,12 +90,9 @@ export async function GET(request: NextRequest) {
       const validTickets = userData.tickets
       const totalTickets = validTickets.length
       const totalSpent = validTickets.reduce((sum, ticket) => sum + Number(ticket.prix), 0)
-      const averageSpent = totalTickets > 0 ? totalSpent / totalTickets : 0
-
-      // Calculer l'activité récente (derniers 30 jours)
-      const thirtyDaysAgo = new Date()
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-      const recentTickets = validTickets.filter(ticket => ticket.createdAt >= thirtyDaysAgo)
+      const averageSpent = totalTickets > 0 ? Math.round(totalSpent / totalTickets) : 0
+      const freeTickets = validTickets.filter(t => Number(t.prix) === 0).length
+      const paidTickets = validTickets.filter(t => Number(t.prix) > 0).length
 
       return {
         id: userData.id,
@@ -100,15 +107,38 @@ export async function GET(request: NextRequest) {
         lastLogin: userData.lastLogin?.toISOString() || null,
         
         // Statistiques
-        totalTickets,
-        totalSpent,
-        averageSpent: Math.round(averageSpent * 100) / 100,
-        recentActivity: recentTickets.length,
-        isActive: userData.lastLogin && userData.lastLogin > thirtyDaysAgo,
-        freeTickets: validTickets.filter(t => Number(t.prix) === 0).length,
-        paidTickets: validTickets.filter(t => Number(t.prix) > 0).length
+        stats: {
+          totalTickets,
+          totalSpent,
+          averageSpent,
+          freeTickets,
+          paidTickets,
+          eventsAttended: validTickets.filter(t => t.statut === 'USED').length,
+          upcomingEvents: validTickets.filter(t => t.statut === 'VALID').length
+        }
       }
     })
+
+    // Log de l'activité admin
+    await prisma.activityLog.create({
+      data: {
+        type: 'ADMIN_ACTION',
+        entity: 'users',
+        entityId: 'list',
+        action: 'view',
+        oldData: undefined,
+        newData: { 
+          count: users.length,
+          filters: { search, role, status, page, limit }
+        },
+        userId: user.id,
+        metadata: {
+          adminEmail: user.email,
+          adminName: user.nom ? `${user.nom} ${user.prenom}` : user.email,
+          timestamp: new Date().toISOString()
+        }
+      }
+    }).catch(err => console.error('❌ Erreur log activité:', err))
 
     const response = {
       users: usersWithStats,
@@ -116,7 +146,9 @@ export async function GET(request: NextRequest) {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrev: page > 1
       },
       filters: {
         search,
@@ -127,10 +159,9 @@ export async function GET(request: NextRequest) {
       },
       summary: {
         totalUsers: total,
-        activeUsers: usersWithStats.filter(u => u.isActive).length,
-        adminUsers: usersWithStats.filter(u => u.role === 'ADMIN').length,
-        bannedUsers: usersWithStats.filter(u => u.statut === 'BANNED').length,
-        inactiveUsers: usersWithStats.filter(u => u.statut === 'INACTIVE').length
+        newUsersThisMonth: 0, // À calculer si nécessaire
+        activeUsers: users.filter(u => u.statut === 'ACTIVE').length,
+        bannedUsers: users.filter(u => u.statut === 'BANNED').length
       }
     }
 
@@ -144,26 +175,45 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/admin/users - Créer un nouvel utilisateur (optionnel)
+// POST /api/admin/users - Créer un nouvel utilisateur
 export async function POST(request: NextRequest) {
   try {
-    const user = await authenticateRequest(request)
+    const user: JWTPayload | null = await authenticateRequest(request)
     
     if (!user || !requireAdmin(user)) {
       return createApiError('FORBIDDEN', 'Accès réservé aux administrateurs', 403)
     }
 
     const body = await request.json()
-    const { email, nom, prenom, telephone, role = 'USER', password } = body
+    const { email, nom, prenom, telephone, role = 'USER', password, sendWelcomeEmail = false } = body
 
-    // Validation des champs requis
-    if (!email || !nom || !prenom || !password) {
-      return createApiError('VALIDATION_ERROR', 'Email, nom, prénom et mot de passe requis', 400)
+    // Validations
+    const validationErrors: string[] = []
+
+    if (!validateRequired(email)) validationErrors.push('Email requis')
+    if (!validateRequired(nom)) validationErrors.push('Nom requis')
+    if (!validateRequired(prenom)) validationErrors.push('Prénom requis')
+    if (!validateRequired(password)) validationErrors.push('Mot de passe requis')
+    
+    if (email && !validateEmail(email)) {
+      validationErrors.push('Format d\'email invalide')
+    }
+
+    if (password && password.length < 6) {
+      validationErrors.push('Le mot de passe doit contenir au moins 6 caractères')
+    }
+
+    if (role && !['USER', 'ADMIN', 'MODERATOR'].includes(role)) {
+      validationErrors.push('Rôle invalide')
+    }
+
+    if (validationErrors.length > 0) {
+      return createApiError('VALIDATION_ERROR', 'Données invalides', 400, validationErrors)
     }
 
     // Vérifier que l'email n'existe pas déjà
     const existingUser = await prisma.user.findUnique({
-      where: { email }
+      where: { email: email.toLowerCase().trim() }
     })
 
     if (existingUser) {
@@ -171,16 +221,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Hasher le mot de passe
-    const bcrypt = require('bcryptjs')
-    const hashedPassword = await bcrypt.hash(password, 12)
+    const hashedPassword = await hashPassword(password)
 
     // Créer l'utilisateur
     const newUser = await prisma.user.create({
       data: {
-        email,
-        nom,
-        prenom,
-        telephone: telephone || null,
+        email: email.toLowerCase().trim(),
+        nom: nom.trim(),
+        prenom: prenom.trim(),
+        telephone: telephone?.trim() || null,
         password: hashedPassword,
         role,
         statut: 'ACTIVE'
@@ -193,7 +242,8 @@ export async function POST(request: NextRequest) {
         telephone: true,
         role: true,
         statut: true,
-        createdAt: true
+        createdAt: true,
+        updatedAt: true
       }
     })
 
@@ -204,63 +254,199 @@ export async function POST(request: NextRequest) {
         entity: 'user',
         entityId: newUser.id,
         action: 'create',
+        oldData: null,
         newData: {
           email: newUser.email,
           nom: newUser.nom,
           prenom: newUser.prenom,
           role: newUser.role
         },
-        userId: user.id
+        userId: user.id,
+        metadata: {
+          adminEmail: user.email,
+          createdUserEmail: newUser.email,
+          timestamp: new Date().toISOString()
+        }
       }
-    })
+    }).catch(err => console.error('❌ Erreur log activité:', err))
 
-    return createApiResponse(newUser, 201)
+    const response = {
+      user: {
+        ...newUser,
+        createdAt: newUser.createdAt.toISOString(),
+        updatedAt: newUser.updatedAt.toISOString()
+      },
+      message: `Utilisateur ${newUser.email} créé avec succès`
+    }
+
+    return createApiResponse(response, 201)
 
   } catch (error) {
     console.error('❌ Erreur API admin users POST:', error)
-    return createApiError('INTERNAL_ERROR', 'Erreur serveur', 500)
+    return createApiError('INTERNAL_ERROR', 'Erreur lors de la création de l\'utilisateur', 500)
   } finally {
     await prisma.$disconnect()
   }
 }
 
-// ===============================================
-// Fonctions utilitaires réutilisées plus bas
-// ===============================================
-        description: formatActivityDescription(log)
-      }))
+// PUT /api/admin/users - Mise à jour en lot (optionnel)
+export async function PUT(request: NextRequest) {
+  try {
+    const user: JWTPayload | null = await authenticateRequest(request)
+    
+    if (!user || !requireAdmin(user)) {
+      return createApiError('FORBIDDEN', 'Accès réservé aux administrateurs', 403)
     }
 
-    return createApiResponse(response)
+    const body = await request.json()
+    const { userIds, action, value } = body
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return createApiError('VALIDATION_ERROR', 'Liste d\'utilisateurs requise', 400)
+    }
+
+    if (!action || !['updateStatus', 'updateRole', 'delete'].includes(action)) {
+      return createApiError('VALIDATION_ERROR', 'Action invalide', 400)
+    }
+
+    let updatedCount = 0
+
+    switch (action) {
+      case 'updateStatus':
+        if (!['ACTIVE', 'INACTIVE', 'BANNED'].includes(value)) {
+          return createApiError('VALIDATION_ERROR', 'Statut invalide', 400)
+        }
+
+        // Empêcher l'auto-bannissement
+        if (value === 'BANNED' && userIds.includes(user.id)) {
+          return createApiError('FORBIDDEN', 'Vous ne pouvez pas vous bannir vous-même', 403)
+        }
+
+        const statusUpdate = await prisma.user.updateMany({
+          where: { 
+            id: { in: userIds },
+            id: { not: user.id } // Empêcher l'auto-modification
+          },
+          data: { statut: value }
+        })
+        updatedCount = statusUpdate.count
+        break
+
+      case 'updateRole':
+        if (!['USER', 'ADMIN', 'MODERATOR'].includes(value)) {
+          return createApiError('VALIDATION_ERROR', 'Rôle invalide', 400)
+        }
+
+        // Empêcher l'auto-modification du rôle
+        const roleUpdate = await prisma.user.updateMany({
+          where: { 
+            id: { in: userIds },
+            id: { not: user.id }
+          },
+          data: { role: value }
+        })
+        updatedCount = roleUpdate.count
+        break
+
+      case 'delete':
+        // Empêcher l'auto-suppression
+        const deleteUpdate = await prisma.user.deleteMany({
+          where: { 
+            id: { in: userIds },
+            id: { not: user.id }
+          }
+        })
+        updatedCount = deleteUpdate.count
+        break
+    }
+
+    // Log de l'activité
+    await prisma.activityLog.create({
+      data: {
+        type: 'ADMIN_ACTION',
+        entity: 'users',
+        entityId: 'batch_update',
+        action: `batch_${action}`,
+        oldData: { userIds },
+        newData: { action, value, updatedCount },
+        userId: user.id,
+        metadata: {
+          adminEmail: user.email,
+          timestamp: new Date().toISOString()
+        }
+      }
+    }).catch(err => console.error('❌ Erreur log activité:', err))
+
+    return createApiResponse({
+      updatedCount,
+      action,
+      value: action !== 'delete' ? value : undefined,
+      message: `${updatedCount} utilisateur(s) mis à jour`
+    })
 
   } catch (error) {
-    console.error('❌ Erreur API admin user detail:', error)
-    return createApiError('INTERNAL_ERROR', 'Erreur serveur', 500)
+    console.error('❌ Erreur API admin users PUT:', error)
+    return createApiError('INTERNAL_ERROR', 'Erreur lors de la mise à jour', 500)
   } finally {
     await prisma.$disconnect()
   }
 }
 
-// Fonction helper pour formater les descriptions d'activité
-function formatActivityDescription(activity: any): string {
-  switch (activity.action) {
-    case 'purchase':
-      return 'Achat de billet'
-    case 'free_reservation':
-      return 'Réservation gratuite'
-    case 'validate':
-      return 'Validation de billet'
-    case 'cancel':
-      return 'Annulation de billet'
-    case 'login':
-      return 'Connexion'
-    case 'logout':
-      return 'Déconnexion'
-    case 'update':
-      return `Mise à jour ${activity.entity}`
-    case 'create':
-      return `Création ${activity.entity}`
-    default:
-      return `Action ${activity.action}`
+// DELETE /api/admin/users - Suppression en lot (optionnel)
+export async function DELETE(request: NextRequest) {
+  try {
+    const user: JWTPayload | null = await authenticateRequest(request)
+    
+    if (!user || !requireAdmin(user)) {
+      return createApiError('FORBIDDEN', 'Accès réservé aux administrateurs', 403)
+    }
+
+    const body = await request.json()
+    const { userIds } = body
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      return createApiError('VALIDATION_ERROR', 'Liste d\'utilisateurs requise', 400)
+    }
+
+    // Empêcher l'auto-suppression
+    if (userIds.includes(user.id)) {
+      return createApiError('FORBIDDEN', 'Vous ne pouvez pas vous supprimer vous-même', 403)
+    }
+
+    // Supprimer les utilisateurs
+    const deleteResult = await prisma.user.deleteMany({
+      where: { 
+        id: { in: userIds },
+        id: { not: user.id }
+      }
+    })
+
+    // Log de l'activité
+    await prisma.activityLog.create({
+      data: {
+        type: 'ADMIN_ACTION',
+        entity: 'users',
+        entityId: 'batch_delete',
+        action: 'batch_delete',
+        oldData: { userIds },
+        newData: { deletedCount: deleteResult.count },
+        userId: user.id,
+        metadata: {
+          adminEmail: user.email,
+          timestamp: new Date().toISOString()
+        }
+      }
+    }).catch(err => console.error('❌ Erreur log activité:', err))
+
+    return createApiResponse({
+      deletedCount: deleteResult.count,
+      message: `${deleteResult.count} utilisateur(s) supprimé(s)`
+    })
+
+  } catch (error) {
+    console.error('❌ Erreur API admin users DELETE:', error)
+    return createApiError('INTERNAL_ERROR', 'Erreur lors de la suppression', 500)
+  } finally {
+    await prisma.$disconnect()
   }
 }

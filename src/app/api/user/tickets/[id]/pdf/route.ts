@@ -23,7 +23,7 @@ export async function GET(
     }
 
     const ticketId = params.id
-    const userId = user.userId
+    const userId = user.id
 
     // Récupérer le billet avec toutes les informations nécessaires
     const ticket = await prisma.ticket.findFirst({

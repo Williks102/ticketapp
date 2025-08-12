@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     // 👤 STATISTIQUES PERSONNELLES UNIQUEMENT
     const userTickets = await prisma.ticket.findMany({
       where: { 
-        userId: user.userId, 
+        userId: user.id, 
         statut: { not: 'CANCELLED' } 
       },
       include: { 
