@@ -419,6 +419,13 @@ export function formatIvorianDateTime(date: Date): string {
 // NOUVELLES FONCTIONS - VALIDATION FLEXIBLE
 // ========================================
 
+
+
+
+
+
+
+
 // ✅ NOUVEAU : Validation flexible pour import/migration
 export function validateUserDataFlexible(data: any, strict: boolean = false): string[] {
   if (strict) {

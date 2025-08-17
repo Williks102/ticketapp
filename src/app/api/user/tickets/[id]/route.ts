@@ -71,6 +71,7 @@ export async function GET(
       validatedAt: ticket.validatedAt?.toISOString() || null,
       validatedBy: ticket.validatedBy || null,
       createdAt: ticket.createdAt.toISOString(),
+      updatedAt: ticket.updatedAt.toISOString(),
       event: {
         id: ticket.event.id,
         titre: ticket.event.titre,

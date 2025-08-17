@@ -1,4 +1,4 @@
-// src/app/auth/login/page.tsx - CORRECTION COMPLÈTE
+// src/app/auth/login/page.tsx - CORRECTION FINALE SPÉCIFIQUE
 'use client'
 
 import { useState } from 'react'
@@ -48,7 +48,6 @@ export default function LoginPage() {
     return Object.keys(newErrors).length === 0
   }
 
-  // ✅ VRAIE API - Connexion avec appel API réel
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
@@ -90,18 +89,20 @@ export default function LoginPage() {
         return
       }
 
-      // ✅ STOCKAGE DU TOKEN
+      // ✅ CORRECTION PRINCIPALE - Structure des données selon votre API existante
       const storage = formData.rememberMe ? localStorage : sessionStorage
+      
+      // Votre API retourne : { success: true, data: { user: {...}, token: "..." } }
       storage.setItem('token', data.data.token)
       storage.setItem('user', JSON.stringify(data.data.user))
 
       console.log('✅ Connexion réussie, redirection vers:', redirect)
 
-      // ✅ REDIRECTION SELON LE RÔLE
+      // ✅ CORRECTION - Utiliser router.push au lieu de window.location.href
       if (data.data.user.role === 'ADMIN') {
-        window.location.href = redirect || '/admin'
+        router.push(redirect || '/admin')
       } else {
-        window.location.href = '/user/dashboard'
+        router.push('/user/dashboard')
       }
 
     } catch (error) {
@@ -152,7 +153,7 @@ export default function LoginPage() {
                 value={formData.email}
                 onChange={handleInputChange}
                 className={`mt-1 w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
-                  errors.email ? 'border-red-300' : 'border-gray-300'
+                  errors.email ? 'border-red-500' : 'border-gray-300'
                 }`}
                 placeholder="votre@email.com"
               />
@@ -173,35 +174,35 @@ export default function LoginPage() {
                 value={formData.password}
                 onChange={handleInputChange}
                 className={`mt-1 w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
-                  errors.password ? 'border-red-300' : 'border-gray-300'
+                  errors.password ? 'border-red-500' : 'border-gray-300'
                 }`}
-                placeholder="••••••••"
+                placeholder="Votre mot de passe"
               />
               {errors.password && (
                 <p className="mt-1 text-sm text-red-600">{errors.password}</p>
               )}
             </div>
-          </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <input
-                id="rememberMe"
-                name="rememberMe"
-                type="checkbox"
-                checked={formData.rememberMe}
-                onChange={handleInputChange}
-                className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
-              />
-              <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-900">
-                Se souvenir de moi
-              </label>
-            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <input
+                  id="rememberMe"
+                  name="rememberMe"
+                  type="checkbox"
+                  checked={formData.rememberMe}
+                  onChange={handleInputChange}
+                  className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
+                />
+                <label htmlFor="rememberMe" className="ml-2 block text-sm text-gray-900">
+                  Se souvenir de moi
+                </label>
+              </div>
 
-            <div className="text-sm">
-              <Link href="/auth/forgot-password" className="font-medium text-orange-600 hover:text-orange-500">
-                Mot de passe oublié ?
-              </Link>
+              <div className="text-sm">
+                <Link href="/auth/forgot-password" className="font-medium text-orange-600 hover:text-orange-500">
+                  Mot de passe oublié ?
+                </Link>
+              </div>
             </div>
           </div>
 
@@ -209,33 +210,22 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isLoading ? (
-                <div className="flex items-center">
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                <span className="flex items-center">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
                   Connexion...
-                </div>
+                </span>
               ) : (
                 'Se connecter'
               )}
             </button>
           </div>
         </form>
-
-        {/* Comptes de test pour développement */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm font-medium text-blue-800 mb-2">Comptes de test :</p>
-            <div className="space-y-1 text-xs text-blue-600">
-              <p>• Admin: admin@test.com / password123</p>
-              <p>• User: user@test.com / password123</p>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )

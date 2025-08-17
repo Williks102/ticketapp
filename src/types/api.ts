@@ -132,9 +132,27 @@ export interface EventResponse {
   createdAt: string
   updatedAt: string
   
-  // Statistiques calculées
+  // ✅ PROPRIÉTÉS CALCULÉES AJOUTÉES
   ticketsVendus?: number
   revenue?: number // Revenue en centimes de FCFA
+  tauxRemplissage?: number // Pourcentage de remplissage
+  isGratuit?: boolean // Prix = 0
+  isComplet?: boolean // Places restantes = 0
+  isUpcoming?: boolean // Événement à venir
+  isPast?: boolean // Événement passé
+  isOngoing?: boolean // Événement en cours
+  recentSales?: number // Ventes récentes (7 derniers jours)
+  
+  // ✅ STATISTIQUES OPTIONNELLES
+  stats?: {
+    conversionRate?: number
+    averagePrice?: number
+    salesByDay?: Array<{
+      date: string
+      sales: number
+      revenue: number
+    }>
+  }
 }
 
 export interface EventsListResponse {
