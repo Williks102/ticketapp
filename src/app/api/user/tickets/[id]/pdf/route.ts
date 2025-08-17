@@ -1,37 +1,41 @@
-// app/api/user/tickets/[id]/pdf/route.ts
+// src/app/api/user/billets/[id]/pdf/route.ts - Génération PDF des billets
 import { NextRequest } from 'next/server'
-import { 
-  createApiResponse, 
-  createApiError,
-  authenticateRequest
-} from '@/lib/api-utils'
+import { createApiError, authenticateRequest } from '@/lib/api-utils'
+import { JWTPayload } from '@/types/api'
 import prisma from '@/lib/prisma'
 
 interface RouteParams {
   params: { id: string }
 }
 
-// GET - Générer et télécharger le PDF d'un billet
-export async function GET(
-  request: NextRequest,
-  { params }: RouteParams
-) {
+// GET - Télécharger le billet en PDF
+export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    const user = await authenticateRequest(request)
+    const user: JWTPayload | null = await authenticateRequest(request)
+    
     if (!user) {
-      return createApiError('UNAUTHORIZED', 'Non autorisé', 401)
+      return createApiError('UNAUTHORIZED', 'Authentification requise', 401)
     }
 
-    const ticketId = params.id
-    const userId = user.id
+    if (user.role !== 'USER') {
+      return createApiError('FORBIDDEN', 'Accès réservé aux utilisateurs', 403)
+    }
 
-    // Récupérer le billet avec toutes les informations nécessaires
+    // Vérifier que l'utilisateur possède ce billet
     const ticket = await prisma.ticket.findFirst({
       where: {
-        id: ticketId,
-        userId: userId // S'assurer que l'utilisateur possède ce billet
+        id: params.id,
+        userId: user.id,
+        statut: { not: 'CANCELLED' }
       },
       include: {
+        user: {
+          select: {
+            nom: true,
+            prenom: true,
+            email: true
+          }
+        },
         event: {
           select: {
             id: true,
@@ -43,14 +47,8 @@ export async function GET(
             dateFin: true,
             organisateur: true,
             image: true,
-            categories: true
-          }
-        },
-        user: {
-          select: {
-            nom: true,
-            prenom: true,
-            email: true
+            categories: true,
+            statut: true
           }
         }
       }
@@ -60,30 +58,55 @@ export async function GET(
       return createApiError('TICKET_NOT_FOUND', 'Billet non trouvé', 404)
     }
 
-    // Générer le HTML du billet pour le PDF
-    const ticketHTML = generateTicketHTML(ticket)
+    // Vérifier que le billet peut être téléchargé
+    if (!['VALID', 'USED'].includes(ticket.statut)) {
+      return createApiError('INVALID_TICKET_STATUS', 'Ce billet ne peut pas être téléchargé', 400)
+    }
 
-    // En production, vous utiliseriez une librairie comme puppeteer ou jsPDF
-    // Pour l'instant, on retourne le HTML qui peut être converti côté client
-    const response = new Response(ticketHTML, {
+    // Générer le contenu PDF (version texte pour l'instant)
+    const pdfContent = generateTicketPDF(ticket, user)
+
+    // Log du téléchargement
+    await prisma.activityLog.create({
+      data: {
+        type: 'USER_ACTION',
+        entity: 'ticket',
+        entityId: ticket.id,
+        action: 'pdf_download',
+        newData: {
+          ticketNumber: ticket.numeroTicket,
+          eventTitle: ticket.event.titre,
+          downloadedAt: new Date().toISOString()
+        },
+        userId: user.id,
+        metadata: {
+          userAgent: request.headers.get('user-agent'),
+          ipAddress: request.ip || 'unknown'
+        }
+      }
+    }).catch(err => console.error('❌ Erreur log PDF download:', err))
+
+    // Retourner le PDF (pour l'instant en texte, à remplacer par un vrai PDF)
+    return new Response(pdfContent, {
+      status: 200,
       headers: {
-        'Content-Type': 'text/html',
-        'Content-Disposition': `attachment; filename="billet-${ticket.numeroTicket}.html"`
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="billet-${ticket.numeroTicket}.pdf"`,
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
       }
     })
 
-    return response
-
   } catch (error) {
-    console.error('Erreur génération PDF billet:', error)
-    return createApiError('INTERNAL_ERROR', 'Erreur interne du serveur', 500)
+    console.error('❌ Erreur génération PDF:', error)
+    return createApiError('INTERNAL_ERROR', 'Erreur serveur', 500)
   } finally {
     await prisma.$disconnect()
   }
 }
 
-function generateTicketHTML(ticket: any): string {
-  const formatDate = (date: Date) => {
+// Fonction pour générer le contenu du billet PDF
+function generateTicketPDF(ticket: any, user: JWTPayload): string {
+  const formatDate = (dateString: string) => {
     return new Intl.DateTimeFormat('fr-FR', {
       weekday: 'long',
       year: 'numeric',
@@ -91,289 +114,136 @@ function generateTicketHTML(ticket: any): string {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
-    }).format(date)
+    }).format(new Date(dateString))
   }
 
   const formatPrice = (price: number) => {
+    if (price === 0) return 'Gratuit'
     return new Intl.NumberFormat('fr-FR', {
       style: 'currency',
-      currency: 'EUR'
-    }).format(price / 100) // Conversion depuis les centimes
+      currency: 'XOF',
+      minimumFractionDigits: 0
+    }).format(price / 100)
   }
 
+  // Template du billet (à remplacer par une vraie génération PDF)
   return `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Billet - ${ticket.event.titre}</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Arial', sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        
-        .ticket {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            overflow: hidden;
-            max-width: 800px;
-            width: 100%;
-            position: relative;
-        }
-        
-        .ticket::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            right: -10px;
-            width: 20px;
-            height: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 50%;
-            transform: translateY(-50%);
-        }
-        
-        .ticket::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: -10px;
-            width: 20px;
-            height: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 50%;
-            transform: translateY(-50%);
-        }
-        
-        .ticket-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-            position: relative;
-        }
-        
-        .ticket-title {
-            font-size: 28px;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-        
-        .ticket-subtitle {
-            font-size: 16px;
-            opacity: 0.9;
-        }
-        
-        .ticket-body {
-            padding: 40px;
-            display: grid;
-            grid-template-columns: 1fr 200px;
-            gap: 40px;
-        }
-        
-        .ticket-info {
-            display: grid;
-            gap: 20px;
-        }
-        
-        .info-group {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        
-        .info-icon {
-            width: 24px;
-            height: 24px;
-            background: #667eea;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 12px;
-            flex-shrink: 0;
-        }
-        
-        .info-content h3 {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 5px;
-        }
-        
-        .info-content p {
-            font-size: 16px;
-            font-weight: 600;
-            color: #333;
-        }
-        
-        .qr-section {
-            text-align: center;
-            padding: 20px;
-            border: 2px dashed #ddd;
-            border-radius: 10px;
-        }
-        
-        .qr-code {
-            width: 150px;
-            height: 150px;
-            background: #f8f9fa;
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            margin: 0 auto 15px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            color: #666;
-            position: relative;
-        }
-        
-        .ticket-number {
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            font-weight: bold;
-            color: #667eea;
-            margin-top: 10px;
-        }
-        
-        .ticket-footer {
-            background: #f8f9fa;
-            padding: 20px 40px;
-            border-top: 1px solid #eee;
-            font-size: 12px;
-            color: #666;
-            text-align: center;
-        }
-        
-        .price-badge {
-            background: #28a745;
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-weight: bold;
-            display: inline-block;
-            margin-top: 10px;
-        }
-        
-        .status-badge {
-            background: #17a2b8;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-    </style>
-</head>
-<body>
-    <div class="ticket">
-        <div class="ticket-header">
-            <div class="ticket-title">${ticket.event.titre}</div>
-            <div class="ticket-subtitle">Organisé par ${ticket.event.organisateur}</div>
-            <span class="status-badge">${getStatusLabel(ticket.statut)}</span>
-        </div>
-        
-        <div class="ticket-body">
-            <div class="ticket-info">
-                <div class="info-group">
-                    <div class="info-icon">📅</div>
-                    <div class="info-content">
-                        <h3>Date et heure</h3>
-                        <p>${formatDate(ticket.event.dateDebut)}</p>
-                    </div>
-                </div>
-                
-                <div class="info-group">
-                    <div class="info-icon">📍</div>
-                    <div class="info-content">
-                        <h3>Lieu</h3>
-                        <p>${ticket.event.lieu}</p>
-                        <p style="font-size: 14px; color: #666; font-weight: normal;">${ticket.event.adresse}</p>
-                    </div>
-                </div>
-                
-                <div class="info-group">
-                    <div class="info-icon">👤</div>
-                    <div class="info-content">
-                        <h3>Titulaire</h3>
-                        <p>${ticket.user.prenom} ${ticket.user.nom}</p>
-                        <p style="font-size: 14px; color: #666; font-weight: normal;">${ticket.user.email}</p>
-                    </div>
-                </div>
-                
-                <div class="info-group">
-                    <div class="info-icon">💰</div>
-                    <div class="info-content">
-                        <h3>Prix</h3>
-                        <p>${formatPrice(ticket.prix)}</p>
-                    </div>
-                </div>
-                
-                ${ticket.validatedAt ? `
-                <div class="info-group">
-                    <div class="info-icon">✅</div>
-                    <div class="info-content">
-                        <h3>Validé le</h3>
-                        <p>${formatDate(new Date(ticket.validatedAt))}</p>
-                    </div>
-                </div>
-                ` : ''}
-            </div>
-            
-            <div class="qr-section">
-                <div class="qr-code">
-                    <!-- En production, insérez ici le QR code généré -->
-                    <div style="text-align: center;">
-                        <div style="font-size: 16px; margin-bottom: 10px;">📱</div>
-                        <div>QR Code</div>
-                        <div style="font-size: 10px; margin-top: 5px;">Scannez à l'entrée</div>
-                    </div>
-                </div>
-                <div class="ticket-number">${ticket.numeroTicket}</div>
-                <p style="font-size: 11px; color: #666; margin-top: 10px;">
-                    Présentez ce QR code à l'entrée
-                </p>
-            </div>
-        </div>
-        
-        <div class="ticket-footer">
-            <p><strong>Conditions importantes :</strong></p>
-            <p>• Ce billet est personnel et non cessible</p>
-            <p>• Présentez-vous 30 minutes avant le début de l'événement</p>
-            <p>• En cas de perte, contactez le support avec votre numéro de billet</p>
-            <p style="margin-top: 10px;">
-                Billet généré le ${formatDate(new Date())} • 
-                Support: support@votreplateforme.com
-            </p>
-        </div>
-    </div>
-</body>
-</html>
-  `
-}
+%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
 
-function getStatusLabel(status: string): string {
-  switch (status) {
-    case 'VALID': return 'Valide'
-    case 'USED': return 'Utilisé'
-    case 'CANCELLED': return 'Annulé'
-    case 'EXPIRED': return 'Expiré'
-    default: return status
-  }
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+/Resources <<
+/Font <<
+/F1 5 0 R
+>>
+>>
+>>
+endobj
+
+4 0 obj
+<<
+/Length 1200
+>>
+stream
+BT
+/F1 16 Tf
+50 720 Td
+(BILLET ÉLECTRONIQUE) Tj
+0 -40 Td
+/F1 12 Tf
+(━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━) Tj
+0 -30 Td
+/F1 14 Tf
+(${ticket.event.titre}) Tj
+0 -25 Td
+/F1 10 Tf
+(${formatDate(ticket.event.dateDebut)}) Tj
+0 -20 Td
+(${ticket.event.lieu}) Tj
+0 -15 Td
+(${ticket.event.adresse || ''}) Tj
+0 -30 Td
+(━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━) Tj
+0 -25 Td
+/F1 12 Tf
+(INFORMATIONS DU BILLET) Tj
+0 -20 Td
+/F1 10 Tf
+(Numéro: ${ticket.numeroTicket}) Tj
+0 -15 Td
+(Prix: ${formatPrice(ticket.prix)}) Tj
+0 -15 Td
+(Statut: ${ticket.statut}) Tj
+0 -15 Td
+(Titulaire: ${ticket.user.prenom} ${ticket.user.nom}) Tj
+0 -15 Td
+(Email: ${ticket.user.email}) Tj
+0 -30 Td
+(━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━) Tj
+0 -25 Td
+/F1 12 Tf
+(QR CODE) Tj
+0 -20 Td
+/F1 10 Tf
+(${ticket.qrCode}) Tj
+0 -30 Td
+(Présentez ce billet à l'entrée de l'événement) Tj
+0 -15 Td
+(Assurez-vous que le QR code soit bien visible) Tj
+0 -30 Td
+(━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━) Tj
+0 -25 Td
+/F1 8 Tf
+(Organisateur: ${ticket.event.organisateur}) Tj
+0 -12 Td
+(Généré le: ${new Date().toLocaleString('fr-FR')}) Tj
+0 -12 Td
+(Billet électronique valide - Merci de votre confiance) Tj
+ET
+endstream
+endobj
+
+5 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+endobj
+
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000284 00000 n 
+0000001540 00000 n 
+trailer
+<<
+/Size 6
+/Root 1 0 R
+>>
+startxref
+1625
+%%EOF
+`.trim()
 }

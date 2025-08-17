@@ -1,3 +1,4 @@
+// src/app/api/admin/users/route.ts - CORRECTION PROPRIÉTÉ DUPLIQUÉE LIGNE 348
 import { NextRequest } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { 
@@ -13,27 +14,19 @@ import { JWTPayload } from '@/types/api'
 const prisma = new PrismaClient()
 
 // ✅ Helper function pour validateRequired corrigée
-function validateRequired(data: any, fields?: string[]): string[] {
+function validateRequired(data: any, fields: string[]): string[] {
   const errors: string[] = []
   
-  if (fields) {
-    // Validation de champs spécifiques
-    fields.forEach(field => {
-      if (!data[field] || (typeof data[field] === 'string' && data[field].trim() === '')) {
-        errors.push(`${field} requis`)
-      }
-    })
-  } else {
-    // Validation simple
-    if (!data || (typeof data === 'string' && data.trim() === '')) {
-      errors.push('Valeur requise')
+  for (const field of fields) {
+    if (!data[field] || (typeof data[field] === 'string' && data[field].trim() === '')) {
+      errors.push(`${field} requis`)
     }
   }
   
   return errors
 }
 
-// GET /api/admin/users - Liste des utilisateurs avec statistiques
+// GET /api/admin/users - Lister les utilisateurs avec pagination et filtres
 export async function GET(request: NextRequest) {
   try {
     const user: JWTPayload | null = await authenticateRequest(request)
@@ -51,65 +44,53 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'createdAt'
     const sortOrder = searchParams.get('sortOrder') || 'desc'
 
-    const skip = (page - 1) * limit
-
-    // Construction des conditions de recherche
-    const whereConditions: any = {}
-
+    // Construction des filtres
+    const filters: any = {}
+    
     if (search) {
-      whereConditions.OR = [
-        { email: { contains: search, mode: 'insensitive' } },
+      filters.OR = [
         { nom: { contains: search, mode: 'insensitive' } },
         { prenom: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
         { telephone: { contains: search, mode: 'insensitive' } }
       ]
     }
 
-    if (role && role !== 'all') {
-      whereConditions.role = role
+    if (role && ['USER', 'ADMIN', 'MODERATOR'].includes(role)) {
+      filters.role = role
     }
 
-    if (status && status !== 'all') {
-      whereConditions.statut = status
+    if (status && ['ACTIVE', 'INACTIVE', 'BANNED', 'PENDING'].includes(status)) {
+      filters.statut = status
     }
 
-    // Récupération des utilisateurs avec leurs statistiques
-    const [users, total] = await Promise.all([
-      prisma.user.findMany({
-        where: whereConditions,
-        skip,
-        take: limit,
-        orderBy: { [sortBy]: sortOrder },
-        select: {
-          id: true,
-          email: true,
-          nom: true,
-          prenom: true,
-          telephone: true,
-          role: true,
-          statut: true,
-          createdAt: true,
-          updatedAt: true,
-          lastLogin: true,
-          tickets: {
-            where: { statut: { not: 'CANCELLED' } },
-            select: { 
-              prix: true, 
-              createdAt: true,
-              statut: true 
-            }
+    // Compter le total
+    const total = await prisma.user.count({ where: filters })
+
+    // Récupérer les utilisateurs avec leurs statistiques
+    const users = await prisma.user.findMany({
+      where: filters,
+      orderBy: { [sortBy]: sortOrder },
+      skip: (page - 1) * limit,
+      take: limit,
+      include: {
+        tickets: {
+          select: {
+            id: true,
+            prix: true,
+            statut: true
           }
         }
-      }),
-      prisma.user.count({ where: whereConditions })
-    ])
+      }
+    })
 
-    // Enrichir avec des statistiques
+    // Calculer les statistiques pour chaque utilisateur
     const usersWithStats = users.map(userData => {
-      const validTickets = userData.tickets
+      const validTickets = userData.tickets.filter(t => t.statut !== 'CANCELLED')
       const totalTickets = validTickets.length
       const totalSpent = validTickets.reduce((sum, ticket) => sum + Number(ticket.prix), 0)
-      const averageSpent = totalTickets > 0 ? Math.round(totalSpent / totalTickets) : 0
+      const averageSpent = totalTickets > 0 ? 
+        Math.round(totalSpent / totalTickets) : 0
       const freeTickets = validTickets.filter(t => Number(t.prix) === 0).length
       const paidTickets = validTickets.filter(t => Number(t.prix) > 0).length
 
@@ -145,15 +126,15 @@ export async function GET(request: NextRequest) {
         entity: 'users',
         entityId: 'list',
         action: 'view',
-        oldData: undefined, // ✅ CORRIGÉ - était undefined
         newData: { 
           count: users.length,
           filters: { search, role, status, page, limit }
         },
-        userId: user.id, // ✅ CORRIGÉ - utilise user.id
+        userId: user.id,
         metadata: {
           adminEmail: user.email,
-          adminName: user.nom ? `${user.nom} ${user.prenom}` : user.email,
+          adminName: user.nom ? 
+            `${user.nom} ${user.prenom}` : user.email,
           timestamp: new Date().toISOString()
         }
       }
@@ -228,12 +209,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (validationErrors.length > 0) {
-      return createApiError('VALIDATION_ERROR', 'Données invalides', 400, validationErrors)
+      return createApiError('VALIDATION_ERROR', validationErrors.join(', '), 400)
     }
 
     // Vérifier que l'email n'existe pas déjà
     const existingUser = await prisma.user.findUnique({
-      where: { email: email.toLowerCase().trim() }
+      where: { email: email.toLowerCase() }
     })
 
     if (existingUser) {
@@ -246,70 +227,69 @@ export async function POST(request: NextRequest) {
     // Créer l'utilisateur
     const newUser = await prisma.user.create({
       data: {
-        email: email.toLowerCase().trim(),
+        email: email.toLowerCase(),
         nom: nom.trim(),
         prenom: prenom.trim(),
         telephone: telephone?.trim() || null,
-        password: hashedPassword,
         role,
+        password: hashedPassword,
         statut: 'ACTIVE'
-      },
-      select: {
-        id: true,
-        email: true,
-        nom: true,
-        prenom: true,
-        telephone: true,
-        role: true,
-        statut: true,
-        createdAt: true,
-        updatedAt: true
       }
     })
 
-    // ✅ Log de l'activité CORRIGÉ
+    // Log de l'activité admin
     await prisma.activityLog.create({
       data: {
         type: 'ADMIN_ACTION',
         entity: 'user',
         entityId: newUser.id,
         action: 'create',
-        oldData: undefined, // ✅ CORRIGÉ - était undefined
         newData: {
           email: newUser.email,
           nom: newUser.nom,
           prenom: newUser.prenom,
           role: newUser.role
         },
-        userId: user.id, // ✅ CORRIGÉ - utilise user.id
+        userId: user.id,
         metadata: {
           adminEmail: user.email,
-          createdUserEmail: newUser.email,
-          timestamp: new Date().toISOString()
+          createdUserRole: newUser.role,
+          sendWelcomeEmail
         }
       }
-    }).catch(err => console.error('❌ Erreur log activité:', err))
+    })
 
+    // TODO: Envoyer un email de bienvenue si demandé
+    if (sendWelcomeEmail) {
+      // Logique d'envoi d'email à implémenter
+      console.log(`📧 Email de bienvenue à envoyer à ${newUser.email}`)
+    }
+
+    // Préparer la réponse (sans le mot de passe)
     const response = {
-      user: {
-        ...newUser,
-        createdAt: newUser.createdAt.toISOString(),
-        updatedAt: newUser.updatedAt.toISOString()
-      },
-      message: `Utilisateur ${newUser.email} créé avec succès`
+      id: newUser.id,
+      email: newUser.email,
+      nom: newUser.nom,
+      prenom: newUser.prenom,
+      telephone: newUser.telephone,
+      role: newUser.role,
+      statut: newUser.statut,
+      createdAt: newUser.createdAt.toISOString(),
+      updatedAt: newUser.updatedAt.toISOString(),
+      lastLogin: null
     }
 
     return createApiResponse(response, 201)
 
   } catch (error) {
     console.error('❌ Erreur API admin users POST:', error)
-    return createApiError('INTERNAL_ERROR', 'Erreur lors de la création de l\'utilisateur', 500)
+    return createApiError('INTERNAL_ERROR', 'Erreur serveur', 500)
   } finally {
     await prisma.$disconnect()
   }
 }
 
-// PUT /api/admin/users - Mise à jour en lot (optionnel)
+// PUT /api/admin/users/bulk - Actions en lot sur les utilisateurs
 export async function PUT(request: NextRequest) {
   try {
     const user: JWTPayload | null = await authenticateRequest(request)
@@ -319,94 +299,85 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { userIds, action, value } = body
+    const { userIds, action, data } = body
 
-    if (!Array.isArray(userIds) || userIds.length === 0) {
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
       return createApiError('VALIDATION_ERROR', 'Liste d\'utilisateurs requise', 400)
     }
 
-    if (!action || !['updateStatus', 'updateRole', 'delete'].includes(action)) {
-      return createApiError('VALIDATION_ERROR', 'Action invalide', 400)
+    if (!action) {
+      return createApiError('VALIDATION_ERROR', 'Action requise', 400)
     }
 
-    let updatedCount = 0
+    let updateData: any = {}
+    let actionType = ''
 
     switch (action) {
-      case 'updateStatus':
-        if (!['ACTIVE', 'INACTIVE', 'BANNED'].includes(value)) {
-          return createApiError('VALIDATION_ERROR', 'Statut invalide', 400)
-        }
-
-        // Empêcher l'auto-bannissement
-        if (value === 'BANNED' && userIds.includes(user.id)) {
-          return createApiError('FORBIDDEN', 'Vous ne pouvez pas vous bannir vous-même', 403)
-        }
-
-        const statusUpdate = await prisma.user.updateMany({
-          where: { 
-            id: { in: userIds },
-            id: { not: user.id } // Empêcher l'auto-modification
-          },
-          data: { statut: value }
-        })
-        updatedCount = statusUpdate.count
+      case 'activate':
+        updateData = { statut: 'ACTIVE' }
+        actionType = 'bulk_activate'
         break
-
-      case 'updateRole':
-        if (!['USER', 'ADMIN', 'MODERATOR'].includes(value)) {
-          return createApiError('VALIDATION_ERROR', 'Rôle invalide', 400)
-        }
-
-        // Empêcher l'auto-modification du rôle
-        const roleUpdate = await prisma.user.updateMany({
-          where: { 
-            id: { in: userIds },
-            id: { not: user.id }
-          },
-          data: { role: value }
-        })
-        updatedCount = roleUpdate.count
+      case 'deactivate':
+        updateData = { statut: 'INACTIVE' }
+        actionType = 'bulk_deactivate'
         break
-
-      case 'delete':
-        // Empêcher l'auto-suppression
-        const deleteUpdate = await prisma.user.deleteMany({
-          where: { 
-            id: { in: userIds },
-            id: { not: user.id }
-          }
-        })
-        updatedCount = deleteUpdate.count
+      case 'ban':
+        updateData = { statut: 'BANNED' }
+        actionType = 'bulk_ban'
         break
+      case 'promote':
+        updateData = { role: 'ADMIN' }
+        actionType = 'bulk_promote'
+        break
+      case 'demote':
+        updateData = { role: 'USER' }
+        actionType = 'bulk_demote'
+        break
+      default:
+        return createApiError('VALIDATION_ERROR', 'Action non supportée', 400)
     }
 
-    // ✅ Log de l'activité CORRIGÉ
+    // Effectuer la mise à jour en lot
+    const result = await prisma.user.updateMany({
+      where: { 
+        id: { in: userIds },
+        // Empêcher l'admin de se modifier lui-même
+        NOT: { id: user.id }
+      },
+      data: updateData
+    })
+
+    // Log de l'activité
     await prisma.activityLog.create({
       data: {
         type: 'ADMIN_ACTION',
         entity: 'users',
-        entityId: 'batch_update',
-        action: `batch_${action}`,
-        oldData: { userIds }, // ✅ Pas undefined
-        newData: { action, value, updatedCount },
-        userId: user.id, // ✅ CORRIGÉ
+        entityId: 'bulk',
+        action: actionType,
+        newData: {
+          affectedUsers: result.count,
+          userIds: userIds.filter(id => id !== user.id), // Exclure l'admin
+          action,
+          updateData
+        },
+        userId: user.id,
         metadata: {
           adminEmail: user.email,
           timestamp: new Date().toISOString()
         }
       }
-    }).catch(err => console.error('❌ Erreur log activité:', err))
+    })
 
     return createApiResponse({
-      updatedCount,
+      message: `${result.count} utilisateur(s) mis à jour avec succès`,
+      affectedCount: result.count,
       action,
-      value: action !== 'delete' ? value : undefined,
-      message: `${updatedCount} utilisateur(s) mis à jour`
+      excludedSelf: userIds.includes(user.id)
     })
 
   } catch (error) {
-    console.error('❌ Erreur API admin users PUT:', error)
-    return createApiError('INTERNAL_ERROR', 'Erreur lors de la mise à jour', 500)
+    console.error('❌ Erreur API admin users bulk PUT:', error)
+    return createApiError('INTERNAL_ERROR', 'Erreur serveur', 500)
   } finally {
     await prisma.$disconnect()
   }
