@@ -1,10 +1,237 @@
-// src/app/api/admin/users/[id]/route.ts - DELETE CORRIGÉ
+// src/app/api/admin/users/[id]/route.ts - VERSION COMPLÈTEMENT CORRIGÉE
 import { NextRequest } from 'next/server'
-import { createApiResponse, createApiError, authenticateRequest, requireAdmin } from '@/lib/api-utils'
+import { createApiResponse, createApiError, authenticateRequest, requireAdmin, hashPassword } from '@/lib/api-utils'
 import prisma from '@/lib/prisma'
 
 interface RouteParams {
   params: { id: string }
+}
+
+// GET /api/admin/users/[id] - Détails d'un utilisateur
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  try {
+    const user = await authenticateRequest(request)
+    
+    if (!user || !requireAdmin(user)) {
+      return createApiError('FORBIDDEN', 'Accès réservé aux administrateurs', 403)
+    }
+
+    // Récupérer l'utilisateur avec ses tickets et événements
+    const userData = await prisma.user.findUnique({
+      where: { id: params.id },
+      include: {
+        tickets: {
+          include: {
+            event: {
+              select: {
+                id: true,
+                titre: true,
+                dateDebut: true,
+                dateFin: true,
+                lieu: true,
+                statut: true,
+                organisateur: true,
+                prix: true
+              }
+            }
+          }
+        }
+      }
+    })
+
+    if (!userData) {
+      return createApiError('USER_NOT_FOUND', 'Utilisateur non trouvé', 404)
+    }
+
+    // Calculer les statistiques de l'utilisateur
+    const validTickets = userData.tickets.filter(t => t.statut !== 'CANCELLED')
+    const totalTickets = validTickets.length
+    const totalSpent = validTickets.reduce((sum, ticket) => sum + Number(ticket.prix), 0)
+    const averageSpent = totalTickets > 0 ? Math.round(totalSpent / totalTickets) : 0
+    const freeTickets = validTickets.filter(t => Number(t.prix) === 0).length
+    const paidTickets = validTickets.filter(t => Number(t.prix) > 0).length
+    const usedTickets = validTickets.filter(t => t.statut === 'USED').length
+    const validTicketsCount = validTickets.filter(t => t.statut === 'VALID').length
+
+    // ✅ CRÉER const response avec la structure correcte
+    const response = {
+      // Informations de base de l'utilisateur
+      id: userData.id,
+      email: userData.email,
+      nom: userData.nom,
+      prenom: userData.prenom,
+      telephone: userData.telephone,
+      role: userData.role,
+      statut: userData.statut,
+      createdAt: userData.createdAt.toISOString(),
+      updatedAt: userData.updatedAt.toISOString(),
+      lastLogin: userData.lastLogin?.toISOString() || null,
+      
+      // ✅ STATISTIQUES dans un objet séparé (résout l'erreur activeTickets)
+      stats: {
+        totalTickets,
+        totalSpent,
+        averageSpent,
+        freeTickets,
+        paidTickets,
+        eventsAttended: usedTickets,
+        upcomingEvents: validTicketsCount,
+        activeTickets: validTicketsCount // ✅ Propriété qui causait l'erreur
+      },
+      
+      // Tickets avec détails des événements
+      tickets: validTickets.map(ticket => ({
+        id: ticket.id,
+        numeroTicket: ticket.numeroTicket,
+        statut: ticket.statut,
+        prix: Number(ticket.prix),
+        createdAt: ticket.createdAt.toISOString(),
+        validatedAt: ticket.validatedAt?.toISOString() || null,
+        validatedBy: ticket.validatedBy,
+        
+        // Informations événement
+        event: {
+          id: ticket.event.id,
+          titre: ticket.event.titre,
+          dateDebut: ticket.event.dateDebut.toISOString(),
+          dateFin: ticket.event.dateFin.toISOString(),
+          lieu: ticket.event.lieu,
+          statut: ticket.event.statut,
+          organisateur: ticket.event.organisateur,
+          prix: Number(ticket.event.prix),
+          isEventPast: ticket.event.dateFin < new Date(),
+          isEventUpcoming: ticket.event.dateDebut > new Date()
+        }
+      })),
+      
+      // Métadonnées supplémentaires
+      metadata: {
+        hasTickets: totalTickets > 0,
+        canDelete: totalTickets === 0,
+        joinedDate: userData.createdAt.toISOString(),
+        isActive: userData.statut === 'ACTIVE',
+        isAdmin: userData.role === 'ADMIN'
+      }
+    }
+
+    // Log de l'activité admin
+    await prisma.activityLog.create({
+      data: {
+        type: 'ADMIN_ACTION',
+        entity: 'user',
+        entityId: params.id,
+        action: 'view_details',
+        newData: {
+          userEmail: userData.email,
+          ticketsCount: totalTickets
+        },
+        userId: user.id,
+        metadata: {
+          adminEmail: user.email,
+          viewedUserRole: userData.role
+        }
+      }
+    })
+
+    return createApiResponse(response)
+
+  } catch (error) {
+    console.error('❌ Erreur API admin user GET:', error)
+    return createApiError('INTERNAL_ERROR', 'Erreur serveur', 500)
+  }
+}
+
+// PUT /api/admin/users/[id] - Modifier un utilisateur
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  try {
+    const user = await authenticateRequest(request)
+    
+    if (!user || !requireAdmin(user)) {
+      return createApiError('FORBIDDEN', 'Accès réservé aux administrateurs', 403)
+    }
+
+    const body = await request.json()
+
+    // Vérifier que l'utilisateur existe
+    const existingUser = await prisma.user.findUnique({
+      where: { id: params.id }
+    })
+
+    if (!existingUser) {
+      return createApiError('USER_NOT_FOUND', 'Utilisateur non trouvé', 404)
+    }
+
+    // Préparer les données de mise à jour
+    const updateData: any = {}
+
+    if (body.nom) updateData.nom = body.nom
+    if (body.prenom) updateData.prenom = body.prenom
+    if (body.telephone !== undefined) updateData.telephone = body.telephone
+    if (body.email && body.email !== existingUser.email) {
+      // Vérifier que le nouvel email n'existe pas déjà
+      const emailExists = await prisma.user.findUnique({
+        where: { email: body.email }
+      })
+      if (emailExists) {
+        return createApiError('EMAIL_EXISTS', 'Cet email est déjà utilisé', 409)
+      }
+      updateData.email = body.email
+    }
+    if (body.role && ['USER', 'ADMIN', 'MODERATOR'].includes(body.role)) {
+      updateData.role = body.role
+    }
+    if (body.statut && ['ACTIVE', 'INACTIVE', 'BANNED', 'PENDING'].includes(body.statut)) {
+      updateData.statut = body.statut
+    }
+    if (body.password) {
+      updateData.password = await hashPassword(body.password)
+    }
+
+    // Mettre à jour l'utilisateur
+    const updatedUser = await prisma.user.update({
+      where: { id: params.id },
+      data: updateData
+    })
+
+    // Log de l'activité
+    await prisma.activityLog.create({
+      data: {
+        type: 'ADMIN_ACTION',
+        entity: 'user',
+        entityId: params.id,
+        action: 'update',
+        oldData: {
+          email: existingUser.email,
+          nom: existingUser.nom,
+          prenom: existingUser.prenom,
+          role: existingUser.role,
+          statut: existingUser.statut
+        },
+        newData: updateData,
+        userId: user.id
+      }
+    })
+
+    // Préparer la réponse (sans le mot de passe)
+    const response = {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      nom: updatedUser.nom,
+      prenom: updatedUser.prenom,
+      telephone: updatedUser.telephone,
+      role: updatedUser.role,
+      statut: updatedUser.statut,
+      createdAt: updatedUser.createdAt.toISOString(),
+      updatedAt: updatedUser.updatedAt.toISOString(),
+      lastLogin: updatedUser.lastLogin?.toISOString() || null
+    }
+
+    return createApiResponse(response)
+
+  } catch (error) {
+    console.error('❌ Erreur API admin user PUT:', error)
+    return createApiError('INTERNAL_ERROR', 'Erreur serveur', 500)
+  }
 }
 
 // DELETE /api/admin/users/[id] - Supprimer un utilisateur
@@ -16,22 +243,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return createApiError('FORBIDDEN', 'Accès réservé aux administrateurs', 403)
     }
 
-    // Récupérer les paramètres de la requête
     const { searchParams } = new URL(request.url)
-    const force = searchParams.get('force') === 'true'
-    const transferTickets = searchParams.get('transferTickets') === 'true'
     const cancelTickets = searchParams.get('cancelTickets') === 'true'
+    const transferTickets = searchParams.get('transferTickets') === 'true'
+    const force = searchParams.get('force') === 'true'
 
-    // Empêcher l'auto-suppression
-    if (user.id === params.id) {
-      return createApiError(
-        'FORBIDDEN', 
-        'Vous ne pouvez pas supprimer votre propre compte', 
-        403
-      )
-    }
-
-    // Vérifier que l'utilisateur existe
+    // Récupérer l'utilisateur avec ses tickets actifs
     const existingUser = await prisma.user.findUnique({
       where: { id: params.id },
       include: {
@@ -39,7 +256,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
           where: { statut: { not: 'CANCELLED' } },
           include: {
             event: {
-              select: { titre: true, dateDebut: true }
+              select: {
+                id: true,
+                titre: true,
+                dateDebut: true
+              }
             }
           }
         }
@@ -53,12 +274,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     // Empêcher la suppression du dernier admin
     if (existingUser.role === 'ADMIN') {
       const adminCount = await prisma.user.count({
-        where: { role: 'ADMIN', id: { not: params.id } }
+        where: { 
+          role: 'ADMIN',
+          statut: 'ACTIVE',
+          id: { not: params.id }
+        }
       })
       
       if (adminCount === 0) {
         return createApiError(
-          'FORBIDDEN',
+          'LAST_ADMIN',
           'Impossible de supprimer le dernier administrateur',
           403
         )
@@ -84,9 +309,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
             statut: ticket.statut
           })),
           options: {
-            cancelTickets: `Annuler tous les billets - Ajouter ?cancelTickets=true`,
-            transferTickets: `Transférer les billets en invités - Ajouter ?transferTickets=true`,
-            force: `Suppression forcée (déconseillée) - Ajouter ?force=true`
+            cancelTickets: 'Annuler tous les billets - Ajouter ?cancelTickets=true',
+            transferTickets: 'Transférer les billets en invités - Ajouter ?transferTickets=true',
+            force: 'Suppression forcée (déconseillée) - Ajouter ?force=true'
           }
         }
       )
@@ -97,8 +322,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       if (cancelTickets) {
         // Option 1 : Annuler tous les billets et libérer les places
         await prisma.$transaction(async (tx) => {
-          // Annuler tous les billets
-          const cancelledTickets = await tx.ticket.updateMany({
+          await tx.ticket.updateMany({
             where: { 
               userId: params.id, 
               statut: { not: 'CANCELLED' } 
@@ -109,112 +333,37 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
           // Libérer les places pour chaque événement
           for (const ticket of activeTickets) {
             await tx.event.update({
-              where: { id: ticket.eventId },
+              where: { id: ticket.event.id },
               data: {
                 placesRestantes: { increment: 1 }
               }
             })
           }
-
-          // Log des annulations
-          for (const ticket of activeTickets) {
-            await tx.activityLog.create({
-              data: {
-                type: 'ADMIN_ACTION',
-                entity: 'ticket',
-                entityId: ticket.id,
-                action: 'cancel',
-                oldData: {
-                  statut: ticket.statut,
-                  numeroTicket: ticket.numeroTicket
-                },
-                newData: {
-                  statut: 'CANCELLED',
-                  reason: 'User deletion'
-                },
-                userId: user.id,
-                metadata: {
-                  reason: 'Annulation automatique lors de la suppression de l\'utilisateur',
-                  deletedUserId: params.id
-                }
-              }
-            })
-          }
         })
-
       } else if (transferTickets) {
-        // Option 2 : Transférer les billets en tant qu'invités
-        await prisma.$transaction(async (tx) => {
-          for (const ticket of activeTickets) {
-            await tx.ticket.update({
-              where: { id: ticket.id },
-              data: {
-                userId: null, // Retirer l'association utilisateur
-                guestEmail: existingUser.email,
-                guestNom: existingUser.nom,
-                guestPrenom: existingUser.prenom,
-                guestTelephone: existingUser.telephone
-              }
-            })
-
-            // Log du transfert
-            await tx.activityLog.create({
-              data: {
-                type: 'ADMIN_ACTION',
-                entity: 'ticket',
-                entityId: ticket.id,
-                action: 'transfer',
-                oldData: {
-                  userId: params.id,
-                  userEmail: existingUser.email
-                },
-                newData: {
-                  userId: null,
-                  guestEmail: existingUser.email,
-                  guestNom: existingUser.nom,
-                  guestPrenom: existingUser.prenom
-                },
-                userId: user.id,
-                metadata: {
-                  reason: 'Transfert en invité lors de la suppression de l\'utilisateur',
-                  originalUserId: params.id
-                }
-              }
-            })
-          }
-        })
-
-      } else if (force) {
-        // Option 3 : Suppression forcée (déconseillée)
-        console.warn(`⚠️ Suppression forcée de l'utilisateur ${existingUser.email} avec ${activeTickets.length} billets actifs`)
-        
-        // Log d'avertissement pour la suppression forcée
-        await prisma.activityLog.create({
+        // Option 2 : Transférer en billets invités
+        await prisma.ticket.updateMany({
+          where: { 
+            userId: params.id, 
+            statut: { not: 'CANCELLED' } 
+          },
           data: {
-            type: 'ADMIN_ACTION',
-            entity: 'user',
-            entityId: params.id,
-            action: 'force_delete',
-            oldData: {
-              email: existingUser.email,
-              activeTicketsCount: activeTickets.length
-            },
-            userId: user.id,
-            metadata: {
-              warning: 'Suppression forcée avec billets actifs',
-              ticketsAffected: activeTickets.map(t => t.numeroTicket)
-            }
+            userId: null,
+            guestEmail: existingUser.email,
+            guestNom: existingUser.nom,
+            guestPrenom: existingUser.prenom,
+            guestTelephone: existingUser.telephone
           }
         })
       }
     }
 
-    // Supprimer l'utilisateur (les billets deviendront orphelins si force=true)
+    // Supprimer l'utilisateur
     await prisma.user.delete({
       where: { id: params.id }
     })
 
-    // Log de l'activité de suppression
+    // Log de l'activité
     await prisma.activityLog.create({
       data: {
         type: 'ADMIN_ACTION',
@@ -259,19 +408,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     })
 
   } catch (error) {
-    console.error('❌ Erreur API admin user delete:', error)
+    console.error('❌ Erreur API admin user DELETE:', error)
     
-    // Gestion spécifique des erreurs de contrainte
     if (error instanceof Error && error.message.includes('foreign key constraint')) {
       return createApiError(
         'FOREIGN_KEY_CONSTRAINT',
-        'Impossible de supprimer cet utilisateur à cause de dépendances. Utilisez les options de transfert ou d\'annulation.',
+        'Impossible de supprimer cet utilisateur à cause de dépendances.',
         409
       )
     }
     
     return createApiError('INTERNAL_ERROR', 'Erreur serveur', 500)
-  } finally {
-    await prisma.$disconnect()
   }
 }

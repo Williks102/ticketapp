@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useIsClient } from '@/hooks/useIsClient'
 
 // Types pour les données du dashboard
 interface DashboardStats {
@@ -345,6 +346,7 @@ function ProgressChart({
 // Composant principal du dashboard
 export default function AdminDashboard() {
   const router = useRouter()
+  const isClient = useIsClient()
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -465,7 +467,7 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
-    setMounted(true)
+    
     setLastRefresh(new Date())
     fetchDashboardData()
     
@@ -499,6 +501,17 @@ export default function AdminDashboard() {
               Réessayer
             </button>
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Chargement du dashboard...</p>
         </div>
       </div>
     )

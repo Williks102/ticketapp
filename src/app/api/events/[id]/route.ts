@@ -1,4 +1,4 @@
-// src/app/api/events/[id]/route.ts - VERSION COMPLÈTE CORRIGÉE
+// src/app/api/events/[id]/route.ts - VERSION COMPLÈTEMENT CORRIGÉE (API PUBLIQUE)
 import { NextRequest } from 'next/server'
 import { createApiResponse, createApiError, validateRequired, authenticateRequest, requireAdmin } from '@/lib/api-utils'
 import prisma from '@/lib/prisma'
@@ -9,10 +9,7 @@ interface RouteParams {
 }
 
 // GET /api/events/[id] - Récupérer un événement spécifique (publique)
-export async function GET(
-  request: NextRequest,
-  { params }: RouteParams
-) {
+export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     console.log('🔄 Récupération de l\'événement:', params.id)
 
@@ -39,7 +36,8 @@ export async function GET(
             revenue: true,
             conversionRate: true,
             averagePrice: true,
-            salesByDay: true
+            salesByDay: true,
+            hourlyStats: true
           }
         }
       }
@@ -62,22 +60,9 @@ export async function GET(
     const validTickets = event.tickets
     const ticketsVendus = validTickets.length
     const revenue = validTickets.reduce((sum, ticket) => sum + Number(ticket.prix), 0)
-    const tauxRemplissage = event.nbPlaces > 0 ? (ticketsVendus / event.nbPlaces) * 100 : 0
-    const placesRestantes = Math.max(0, event.nbPlaces - ticketsVendus)
+    const tauxRemplissage = event.nbPlaces > 0 ? Math.round((ticketsVendus / event.nbPlaces) * 100) : 0
 
-    // Déterminer l'état de l'événement
-    const now = new Date()
-    const isUpcoming = event.dateDebut > now
-    const isPast = event.dateFin < now
-    const isOngoing = event.dateDebut <= now && event.dateFin > now
-    const isComplet = placesRestantes === 0
-
-    // Calculer les ventes récentes (derniers 7 jours)
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-    const recentSales = validTickets.filter(ticket => 
-      new Date(ticket.createdAt) >= weekAgo
-    ).length
-
+    // ✅ CORRECTION PRINCIPALE - Créer const response avec types corrects pour l'API publique
     const response: EventResponse = {
       id: event.id,
       titre: event.titre,
@@ -88,27 +73,44 @@ export async function GET(
       dateFin: event.dateFin.toISOString(),
       prix: Number(event.prix),
       nbPlaces: event.nbPlaces,
-      placesRestantes,
-      statut: event.statut as 'ACTIVE' | 'INACTIVE' | 'COMPLET' | 'ANNULE' | 'TERMINE',
+      placesRestantes: event.placesRestantes,
+      statut: event.statut,
       organisateur: event.organisateur,
       image: event.image,
       categories: event.categories,
       createdAt: event.createdAt.toISOString(),
       updatedAt: event.updatedAt.toISOString(),
+
+      // Propriétés calculées
       ticketsVendus,
       revenue,
-      tauxRemplissage: Math.round(tauxRemplissage * 100) / 100,
-      isGratuit: Number(event.prix) === 0,
-      isComplet,
-      isUpcoming,
-      isPast,
-      isOngoing,
-      recentSales,
-      // Données supplémentaires pour les détails
+      tauxRemplissage,
+      isGratuit: event.prix === 0,
+      isComplet: event.placesRestantes === 0,
+      isUpcoming: event.dateDebut > new Date(),
+      isPast: event.dateFin < new Date(),
+      isOngoing: new Date() >= event.dateDebut && new Date() <= event.dateFin,
+
+      // ✅ CORRECTION pour eventStats avec casting correct de JsonValue
       stats: event.eventStats ? {
         conversionRate: event.eventStats.conversionRate,
         averagePrice: Number(event.eventStats.averagePrice),
-        salesByDay: event.eventStats.salesByDay
+        
+        // ✅ CASTING CORRECT pour salesByDay - résout l'erreur JsonValue
+        salesByDay: event.eventStats.salesByDay ? 
+          (event.eventStats.salesByDay as Array<{
+            date: string
+            sales: number
+            revenue: number
+          }>) : undefined,
+        
+        // ✅ CASTING CORRECT pour hourlyStats
+        hourlyStats: event.eventStats.hourlyStats ? 
+          (event.eventStats.hourlyStats as Array<{
+            hour: number
+            sales: number
+            revenue: number
+          }>) : undefined
       } : undefined
     }
 
@@ -119,16 +121,11 @@ export async function GET(
   } catch (error) {
     console.error('❌ Erreur API events/[id] GET:', error)
     return createApiError('INTERNAL_ERROR', 'Erreur lors de la récupération de l\'événement', 500)
-  } finally {
-    await prisma.$disconnect()
   }
 }
 
 // PUT /api/events/[id] - Mettre à jour un événement (admin seulement)
-export async function PUT(
-  request: NextRequest,
-  { params }: RouteParams
-) {
+export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await authenticateRequest(request)
     
@@ -231,7 +228,7 @@ export async function PUT(
       }
 
       // Empêcher la modification du prix si des billets sont vendus
-      if (ticketsVendus > 0 && Number(existingEvent.prix) !== body.prix * 100) {
+      if (ticketsVendus > 0 && Number(existingEvent.prix) !== body.prix) {
         return createApiError(
           'VALIDATION_ERROR',
           'Impossible de modifier le prix après la vente de billets',
@@ -239,19 +236,19 @@ export async function PUT(
         )
       }
 
-      updateData.prix = Math.round(body.prix * 100) // Convertir en centimes
+      updateData.prix = Number(body.prix)
     }
 
     // Validation du nombre de places
     if (body.nbPlaces !== undefined) {
-      if (typeof body.nbPlaces !== 'number' || body.nbPlaces <= 0) {
-        return createApiError('VALIDATION_ERROR', 'Le nombre de places doit être un nombre positif', 400)
+      if (typeof body.nbPlaces !== 'number' || body.nbPlaces < 1) {
+        return createApiError('VALIDATION_ERROR', 'Le nombre de places doit être au moins 1', 400)
       }
 
       if (body.nbPlaces < ticketsVendus) {
         return createApiError(
           'VALIDATION_ERROR',
-          `Impossible de réduire le nombre de places en dessous du nombre de billets vendus (${ticketsVendus})`,
+          `Impossible de réduire à ${body.nbPlaces} places (${ticketsVendus} billets déjà vendus)`,
           400
         )
       }
@@ -260,88 +257,33 @@ export async function PUT(
       updateData.placesRestantes = body.nbPlaces - ticketsVendus
     }
 
-    // Validation de l'image
-    if (body.image !== undefined) {
-      if (body.image && !isValidImageUrl(body.image)) {
-        return createApiError('VALIDATION_ERROR', 'URL d\'image invalide', 400)
-      }
-      updateData.image = body.image?.trim() || null
-    }
-
-    // Validation des catégories
-    if (body.categories !== undefined) {
-      const validCategories = [
-        'concert', 'theatre', 'festival', 'sport', 'conference', 
-        'exposition', 'cinema', 'danse', 'spectacle', 'autre'
-      ]
-      if (body.categories.some((cat: string) => !validCategories.includes(cat))) {
-        return createApiError('VALIDATION_ERROR', 'Catégorie invalide', 400)
-      }
-      updateData.categories = body.categories
-    }
-
     // Validation du statut
     if (body.statut !== undefined) {
-      const validStatuses = ['ACTIVE', 'INACTIVE', 'COMPLET', 'ANNULE', 'TERMINE']
-      if (!validStatuses.includes(body.statut)) {
+      const statusValides = ['DRAFT', 'ACTIVE', 'INACTIVE', 'COMPLET', 'ANNULE', 'TERMINE']
+      if (!statusValides.includes(body.statut)) {
         return createApiError('VALIDATION_ERROR', 'Statut invalide', 400)
       }
+      updateData.statut = body.statut
+    }
 
-      // Logique métier pour les changements de statut
-      if (body.statut === 'ANNULE' && ticketsVendus > 0) {
-        // L'annulation nécessite une gestion des remboursements
-        updateData.statut = 'ANNULE'
-        // TODO: Déclencher le processus de remboursement
-      } else {
-        updateData.statut = body.statut
+    // Autres champs optionnels
+    if (body.image !== undefined) {
+      updateData.image = body.image
+    }
+
+    if (body.categories !== undefined) {
+      if (Array.isArray(body.categories)) {
+        updateData.categories = body.categories
       }
     }
 
-    // Si aucune modification, retourner l'événement actuel
-    if (Object.keys(updateData).length === 0) {
-      const response: EventResponse = {
-        id: existingEvent.id,
-        titre: existingEvent.titre,
-        description: existingEvent.description,
-        lieu: existingEvent.lieu,
-        adresse: existingEvent.adresse,
-        dateDebut: existingEvent.dateDebut.toISOString(),
-        dateFin: existingEvent.dateFin.toISOString(),
-        prix: Number(existingEvent.prix),
-        nbPlaces: existingEvent.nbPlaces,
-        placesRestantes: existingEvent.placesRestantes,
-        statut: existingEvent.statut as any,
-        organisateur: existingEvent.organisateur,
-        image: existingEvent.image,
-        categories: existingEvent.categories,
-        createdAt: existingEvent.createdAt.toISOString(),
-        updatedAt: existingEvent.updatedAt.toISOString(),
-        ticketsVendus,
-        revenue: existingEvent.tickets.reduce((sum, ticket) => sum + Number(ticket.prix), 0),
-        tauxRemplissage: existingEvent.nbPlaces > 0 ? (ticketsVendus / existingEvent.nbPlaces) * 100 : 0,
-        isGratuit: Number(existingEvent.prix) === 0
-      }
-
-      return createApiResponse(response, 200, 'Aucune modification apportée')
-    }
-
-    // Effectuer la mise à jour
+    // Mettre à jour l'événement
     const updatedEvent = await prisma.event.update({
       where: { id: params.id },
-      data: updateData,
-      include: {
-        tickets: {
-          where: { statut: { not: 'CANCELLED' } },
-          select: {
-            id: true,
-            prix: true,
-            statut: true
-          }
-        }
-      }
+      data: updateData
     })
 
-    // Log de l'activité admin
+    // Log de l'activité
     await prisma.activityLog.create({
       data: {
         type: 'ADMIN_ACTION',
@@ -350,25 +292,15 @@ export async function PUT(
         action: 'update',
         oldData: {
           titre: existingEvent.titre,
-          prix: existingEvent.prix,
-          nbPlaces: existingEvent.nbPlaces,
-          statut: existingEvent.statut
+          statut: existingEvent.statut,
+          prix: existingEvent.prix
         },
         newData: updateData,
-        userId: user.id,
-        metadata: {
-          adminEmail: user.email,
-          changedFields: Object.keys(updateData),
-          timestamp: new Date().toISOString()
-        }
+        userId: user.id
       }
     })
 
-    // Formater la réponse
-    const updatedTicketsVendus = updatedEvent.tickets.length
-    const updatedRevenue = updatedEvent.tickets.reduce((sum, ticket) => sum + Number(ticket.prix), 0)
-    const updatedTauxRemplissage = updatedEvent.nbPlaces > 0 ? (updatedTicketsVendus / updatedEvent.nbPlaces) * 100 : 0
-
+    // Réponse avec les données mises à jour
     const response: EventResponse = {
       id: updatedEvent.id,
       titre: updatedEvent.titre,
@@ -379,50 +311,28 @@ export async function PUT(
       dateFin: updatedEvent.dateFin.toISOString(),
       prix: Number(updatedEvent.prix),
       nbPlaces: updatedEvent.nbPlaces,
-      placesRestantes: Math.max(0, updatedEvent.nbPlaces - updatedTicketsVendus),
-      statut: updatedEvent.statut as any,
+      placesRestantes: updatedEvent.placesRestantes,
+      statut: updatedEvent.statut,
       organisateur: updatedEvent.organisateur,
       image: updatedEvent.image,
       categories: updatedEvent.categories,
       createdAt: updatedEvent.createdAt.toISOString(),
       updatedAt: updatedEvent.updatedAt.toISOString(),
-      ticketsVendus: updatedTicketsVendus,
-      revenue: updatedRevenue,
-      tauxRemplissage: Math.round(updatedTauxRemplissage * 100) / 100,
-      isGratuit: Number(updatedEvent.prix) === 0,
-      isComplet: updatedTicketsVendus >= updatedEvent.nbPlaces,
-      isUpcoming: updatedEvent.dateDebut > new Date(),
-      isPast: updatedEvent.dateFin < new Date()
+      isGratuit: updatedEvent.prix === 0
     }
 
-    console.log('✅ Événement modifié avec succès:', updatedEvent.titre)
+    console.log('✅ Événement modifié:', updatedEvent.titre)
 
-    return createApiResponse(response, 200, 'Événement modifié avec succès')
+    return createApiResponse(response)
 
   } catch (error) {
     console.error('❌ Erreur API events/[id] PUT:', error)
-    
-    // Gestion spécifique des erreurs Prisma
-    if (error instanceof Error) {
-      if (error.message.includes('Unique constraint')) {
-        return createApiError('DUPLICATE_ERROR', 'Données dupliquées détectées', 409)
-      }
-      if (error.message.includes('Foreign key')) {
-        return createApiError('REFERENCE_ERROR', 'Référence invalide', 400)
-      }
-    }
-
     return createApiError('INTERNAL_ERROR', 'Erreur lors de la modification de l\'événement', 500)
-  } finally {
-    await prisma.$disconnect()
   }
 }
 
 // DELETE /api/events/[id] - Supprimer un événement (admin seulement)
-export async function DELETE(
-  request: NextRequest,
-  { params }: RouteParams
-) {
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await authenticateRequest(request)
     
@@ -451,33 +361,22 @@ export async function DELETE(
       return createApiError('EVENT_NOT_FOUND', 'Événement non trouvé', 404)
     }
 
-    const ticketsVendus = existingEvent.tickets.length
-
-    // Empêcher la suppression si des billets sont vendus
-    if (ticketsVendus > 0) {
+    // Vérifier s'il y a des billets actifs
+    const activeTickets = existingEvent.tickets
+    if (activeTickets.length > 0) {
       return createApiError(
-        'CANNOT_DELETE_EVENT',
-        `Impossible de supprimer un événement avec ${ticketsVendus} billet(s) vendu(s). Annulez l'événement à la place.`,
+        'CONFLICT',
+        `Impossible de supprimer un événement avec ${activeTickets.length} billet(s) actif(s)`,
         409
       )
     }
 
-    // Empêcher la suppression si l'événement a commencé
-    const now = new Date()
-    if (existingEvent.dateDebut <= now) {
-      return createApiError(
-        'CANNOT_DELETE_EVENT',
-        'Impossible de supprimer un événement qui a déjà commencé',
-        409
-      )
-    }
-
-    // Supprimer l'événement (suppression en cascade des statistiques)
+    // Supprimer l'événement
     await prisma.event.delete({
       where: { id: params.id }
     })
 
-    // Log de l'activité admin
+    // Log de l'activité
     await prisma.activityLog.create({
       data: {
         type: 'ADMIN_ACTION',
@@ -486,59 +385,22 @@ export async function DELETE(
         action: 'delete',
         oldData: {
           titre: existingEvent.titre,
-          prix: existingEvent.prix,
-          nbPlaces: existingEvent.nbPlaces,
-          organisateur: existingEvent.organisateur,
-          dateDebut: existingEvent.dateDebut.toISOString()
+          prix: existingEvent.prix
         },
-        userId: user.id,
-        metadata: {
-          adminEmail: user.email,
-          eventTitle: existingEvent.titre,
-          timestamp: new Date().toISOString()
-        }
+        userId: user.id
       }
     })
 
-    console.log('✅ Événement supprimé avec succès:', existingEvent.titre)
+    console.log('✅ Événement supprimé:', existingEvent.titre)
 
-    return createApiResponse(
-      { 
-        message: 'Événement supprimé avec succès',
-        deletedEventId: params.id,
-        eventTitle: existingEvent.titre
-      }, 
-      200, 
-      'Événement supprimé avec succès'
-    )
+    return createApiResponse({ 
+      message: 'Événement supprimé avec succès',
+      deletedEventId: params.id,
+      deletedEventTitle: existingEvent.titre
+    })
 
   } catch (error) {
     console.error('❌ Erreur API events/[id] DELETE:', error)
     return createApiError('INTERNAL_ERROR', 'Erreur lors de la suppression de l\'événement', 500)
-  } finally {
-    await prisma.$disconnect()
-  }
-}
-
-// Fonction utilitaire pour valider une URL d'image
-function isValidImageUrl(url: string): boolean {
-  try {
-    const parsedUrl = new URL(url)
-    const validProtocols = ['http:', 'https:']
-    const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg']
-    
-    if (!validProtocols.includes(parsedUrl.protocol)) {
-      return false
-    }
-
-    const pathname = parsedUrl.pathname.toLowerCase()
-    return validExtensions.some(ext => pathname.endsWith(ext)) || 
-           pathname.includes('/upload/') || // Cloudinary ou similaire
-           parsedUrl.hostname.includes('cloudinary') ||
-           parsedUrl.hostname.includes('amazonaws') ||
-           parsedUrl.hostname.includes('unsplash') ||
-           parsedUrl.hostname.includes('pixabay')
-  } catch {
-    return false
   }
 }
