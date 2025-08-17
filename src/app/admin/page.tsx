@@ -174,6 +174,9 @@ function RecentActivitiesList({ activities, loading }: { activities: RecentActiv
     )
   }
 
+  // ✅ CORRECTION - Vérifier que activities est un tableau
+  const safeActivities = Array.isArray(activities) ? activities : []
+
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
       <div className="flex items-center justify-between mb-4">
@@ -183,7 +186,7 @@ function RecentActivitiesList({ activities, loading }: { activities: RecentActiv
         </Link>
       </div>
       <div className="space-y-4 max-h-96 overflow-y-auto">
-        {activities.length === 0 ? (
+        {safeActivities.length === 0 ? (
           <div className="text-center py-8">
             <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -191,7 +194,7 @@ function RecentActivitiesList({ activities, loading }: { activities: RecentActiv
             <p className="text-gray-500">Aucune activité récente</p>
           </div>
         ) : (
-          activities.map((activity) => (
+          safeActivities.map((activity) => (
             <div key={activity.id} className="flex items-start space-x-3 pb-3 border-b border-gray-100 last:border-b-0 last:pb-0">
               <div className="mt-2 flex-shrink-0">
                 {getActivityIcon(activity.type)}
@@ -251,6 +254,9 @@ function TopEventsList({ events, loading }: { events: TopEvent[]; loading: boole
     )
   }
 
+  // ✅ CORRECTION - Vérifier que events est un tableau
+  const safeEvents = Array.isArray(events) ? events : []
+
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
       <div className="flex items-center justify-between mb-4">
@@ -260,7 +266,7 @@ function TopEventsList({ events, loading }: { events: TopEvent[]; loading: boole
         </Link>
       </div>
       <div className="space-y-4 max-h-96 overflow-y-auto">
-        {events.length === 0 ? (
+        {safeEvents.length === 0 ? (
           <div className="text-center py-8">
             <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -268,7 +274,7 @@ function TopEventsList({ events, loading }: { events: TopEvent[]; loading: boole
             <p className="text-gray-500">Aucun événement trouvé</p>
           </div>
         ) : (
-          events.map((event, index) => (
+          safeEvents.map((event, index) => (
             <div key={event.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
               <div className="flex items-center space-x-3">
                 <div className="flex items-center justify-center w-8 h-8 bg-orange-100 text-orange-600 rounded-full text-sm font-semibold">
@@ -459,10 +465,15 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
+    setMounted(true)
+    setLastRefresh(new Date())
     fetchDashboardData()
     
     // Auto-refresh toutes les 5 minutes
-    const interval = setInterval(fetchDashboardData, 5 * 60 * 1000)
+    const interval = setInterval(() => {
+      fetchDashboardData()
+    }, 5 * 60 * 1000)
+    
     return () => clearInterval(interval)
   }, [])
 
@@ -513,9 +524,12 @@ export default function AdminDashboard() {
           <p className="text-gray-600 mt-1">
             Vue d'ensemble de votre plateforme de billetterie
           </p>
-          <p className="text-xs text-gray-400 mt-2">
-            Dernière mise à jour : {lastRefresh.toLocaleTimeString('fr-FR')}
-          </p>
+          {/* ✅ CORRECTION - Afficher l'horodatage seulement côté client */}
+          {mounted && lastRefresh && (
+            <p className="text-xs text-gray-400 mt-2">
+              Dernière mise à jour : {lastRefresh.toLocaleTimeString('fr-FR')}
+            </p>
+          )}
         </div>
         <div className="flex space-x-3 mt-4 md:mt-0">
           <button

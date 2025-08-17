@@ -1,4 +1,4 @@
-// src/lib/prisma.ts - VERSION CORRIGÉE FINALE
+// src/lib/prisma.ts - VERSION CORRIGÉE SANS $USE
 import { PrismaClient } from '@prisma/client'
 
 // Configuration globale pour éviter les multiples instances en développement
@@ -14,51 +14,20 @@ const prisma = globalForPrisma.prisma ?? new PrismaClient({
       url: process.env.DATABASE_URL,
     },
   }
-  // ❌ SUPPRIMÉ __internal car il cause l'erreur "never"
 })
 
-// Middleware pour ajouter automatiquement la timezone Côte d'Ivoire
-prisma.$use(async (params, next) => {
-  // Intercepter les opérations de création/modification pour gérer les dates
-  if (params.action === 'create' || params.action === 'update') {
-    // Gérer automatiquement les timestamps en heure ivoirienne
-    const now = new Date()
-    
-    if (params.action === 'create' && params.args.data) {
-      // S'assurer que createdAt est défini avec l'heure ivoirienne
-      if (!params.args.data.createdAt) {
-        params.args.data.createdAt = now
-      }
-      params.args.data.updatedAt = now
-    } else if (params.action === 'update' && params.args.data) {
-      // Mettre à jour automatiquement updatedAt
-      params.args.data.updatedAt = now
-    }
-  }
-  
-  return next(params)
-})
-
-// Middleware pour la gestion des erreurs spécifiques
-prisma.$use(async (params, next) => {
-  try {
-    return await next(params)
-  } catch (error: any) {
-    // Log spécifique des erreurs avec contexte
-    console.error(`[Prisma Error] ${params.model}.${params.action}:`, {
-      error: error.message,
-      code: error.code,
-      meta: error.meta,
-      args: params.args
-    })
-    
-    // Relancer l'erreur pour la gestion en amont
-    throw error
-  }
-})
+// ✅ SUPPRESSION DES MIDDLEWARES $use (dépréciés)
+// Les middlewares $use ne sont plus supportés dans les versions récentes de Prisma
+// À la place, nous utilisons des fonctions helper pour la gestion des dates
 
 // Éviter les multiples instances en développement
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma
+}
+
+// ========================================
+// FONCTIONS UTILITAIRES
+// ========================================
 
 // Fonction utilitaire pour la déconnexion propre
 export async function disconnectPrisma() {
@@ -97,8 +66,122 @@ export async function executeTransaction<T>(
   }
 }
 
-// Types utilitaires pour le typage strict - CORRIGÉS
-export type PrismaTransactionClient = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use'>
+// ========================================
+// FONCTIONS HELPER POUR LES DATES
+// ========================================
+
+// Helper pour créer des données avec timestamp ivoirien
+export function createWithIvorianTime<T extends { createdAt?: Date; updatedAt?: Date }>(
+  data: T
+): T & { createdAt: Date; updatedAt: Date } {
+  const now = new Date()
+  return {
+    ...data,
+    createdAt: data.createdAt || now,
+    updatedAt: now
+  }
+}
+
+// Helper pour mettre à jour avec timestamp ivoirien
+export function updateWithIvorianTime<T extends { updatedAt?: Date }>(
+  data: T
+): T & { updatedAt: Date } {
+  return {
+    ...data,
+    updatedAt: new Date()
+  }
+}
+
+// ========================================
+// FONCTIONS WRAPPER POUR LES OPÉRATIONS COURANTES
+// ========================================
+
+// Wrapper pour les créations avec gestion automatique des dates
+export async function createWithTimestamp<T extends Record<string, any>>(
+  model: any,
+  data: T
+) {
+  return await model.create({
+    data: createWithIvorianTime(data)
+  })
+}
+
+// Wrapper pour les mises à jour avec gestion automatique des dates
+export async function updateWithTimestamp<T extends Record<string, any>>(
+  model: any,
+  where: any,
+  data: T
+) {
+  return await model.update({
+    where,
+    data: updateWithIvorianTime(data)
+  })
+}
+
+// ========================================
+// TYPES UTILITAIRES
+// ========================================
+
+// Type pour les transactions Prisma
+export type PrismaTransactionClient = Omit<
+  PrismaClient,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+>
+
+// ========================================
+// GESTIONNAIRE D'ERREURS PRISMA
+// ========================================
+
+export function handlePrismaError(error: any) {
+  console.error('[Prisma Error]:', {
+    message: error.message,
+    code: error.code,
+    meta: error.meta,
+    stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+  })
+  
+  // Mapper les erreurs Prisma vers des messages utilisateur-friendly
+  if (error.code === 'P2002') {
+    return {
+      type: 'UNIQUE_CONSTRAINT',
+      message: 'Cette donnée existe déjà',
+      field: error.meta?.target?.[0] || 'unknown'
+    }
+  }
+  
+  if (error.code === 'P2003') {
+    return {
+      type: 'FOREIGN_KEY_CONSTRAINT',
+      message: 'Référence invalide',
+      field: error.meta?.field_name || 'unknown'
+    }
+  }
+  
+  if (error.code === 'P2025') {
+    return {
+      type: 'RECORD_NOT_FOUND',
+      message: 'Enregistrement non trouvé',
+      field: 'id'
+    }
+  }
+  
+  return {
+    type: 'UNKNOWN_ERROR',
+    message: 'Erreur de base de données',
+    field: 'unknown'
+  }
+}
+
+// ========================================
+// EXPORTS
+// ========================================
 
 export default prisma
 export { prisma }
+
+// Hook de nettoyage pour la fermeture de l'application
+if (typeof process !== 'undefined') {
+  process.on('beforeExit', () => {
+    disconnectPrisma()
+  })
+}
