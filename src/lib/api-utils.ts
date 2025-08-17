@@ -83,8 +83,9 @@ export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS)
 }
 
-export async function comparePassword(password: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(password, hash)
+export async function comparePassword(plainPassword: string, hashedPassword: string): Promise<boolean> {
+  const bcrypt = require('bcryptjs')
+  return await bcrypt.compare(plainPassword, hashedPassword)
 }
 
 export function generateToken(payload: JWTPayload): string {
@@ -127,7 +128,7 @@ export function validateEmail(email: string): boolean {
 export function validatePassword(password: string): string[] {
   const errors: string[] = []
   
-  if (password.length < 8) {
+  if (!password || password.length < 8) {
     errors.push('Le mot de passe doit contenir au moins 8 caractères')
   }
   
@@ -655,4 +656,6 @@ export function sanitizeFreeReservationData(data: any) {
     guestPrenom: data.guestPrenom ? sanitizeString(data.guestPrenom) : null
   }
 }
+
+
 

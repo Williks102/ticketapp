@@ -83,26 +83,27 @@ const mockRecentEvents: EventResponse[] = [
 
 const mockRecentTickets: TicketResponse[] = [
   {
+  id: '1',
+  numeroTicket: 'TK-001',
+  qrCode: 'data:image/png;base64,mock',
+  statut: 'VALID' as const,
+  prix: 2500000,
+  createdAt: '2024-01-15T10:00:00Z',
+  updatedAt: '2024-01-15T10:00:00Z', // ✅ AJOUTER cette ligne
+  event: {
     id: '1',
-    numeroTicket: 'TKT-202508001',
-    qrCode: 'data:image/png;base64,sample',
-    statut: 'VALID',
-    prix: 45,
-    createdAt: '2025-08-10T14:30:00Z',
-    event: {
-      id: '1',
-      titre: 'Concert Jazz en Plein Air',
-      lieu: 'Parc Municipal',
-      dateDebut: '2025-08-20T19:30:00Z',
-      dateFin: '2025-08-20T23:00:00Z'
-    },
-    user: {
-      id: 'user1',
-      nom: 'Martin',
-      prenom: 'Pierre',
-      email: 'pierre.martin@email.com'
-    }
+    titre: 'Concert Jazz Night',
+    lieu: 'Sofitel Abidjan',
+    dateDebut: '2024-02-20T20:00:00Z',
+    dateFin: '2024-02-20T23:00:00Z'
+  },
+  user: {
+    id: '1',
+    nom: 'Dupont',
+    prenom: 'Marie',
+    email: 'marie@email.com'
   }
+}
 ]
 
 export default function UserDashboard() {

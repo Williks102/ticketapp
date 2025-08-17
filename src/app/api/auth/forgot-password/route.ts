@@ -31,8 +31,10 @@ export async function POST(request: NextRequest) {
     if (user) {
       // Générer un token de réinitialisation
       const resetToken = generateToken({
-        userId: user.id,
+        id: user.id,
         email: user.email,
+        nom: user.nom,
+        prenom: user.prenom,
         role: user.role as 'USER' | 'ADMIN'
       })
       

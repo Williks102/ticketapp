@@ -152,6 +152,11 @@ export interface EventResponse {
       sales: number
       revenue: number
     }>
+    hourlyStats?: Array<{  // ✅ AJOUTER cette propriété
+    hour: number
+    sales: number
+    revenue: number
+  }>
   }
 }
 
@@ -348,27 +353,27 @@ export interface DashboardStatsResponse {
 }
 
 export interface EventStatsResponse {
-  id: string
+id: string
   eventId: string
   ticketsSold: number
-  revenue: number // En centimes de FCFA
+  revenue: number
   conversionRate: number
-  averagePrice: number // En centimes de FCFA
+  averagePrice: number
   peakSalesDay?: string | null
   lastUpdated: string
-  
-  // Données graphiques
   salesByDay?: Array<{
     date: string
     sales: number
     revenue: number
-  }>
+  }> | null
   hourlyStats?: Array<{
     hour: number
     sales: number
     revenue: number
-  }>
+  }> | null
 }
+
+
 
 export interface SalesReport {
   totalSales: number
@@ -433,6 +438,7 @@ export interface ActivityLogResponse {
   userAgent?: string | null
   createdAt: string
 }
+
 
 // ========================================
 // INTERFACES GÉNÉRIQUES
@@ -570,4 +576,9 @@ export default interface APITypes {
   EventResponse: EventResponse
   TicketResponse: TicketResponse
   ApiResponse: ApiResponse
+}
+
+export interface EventWithRelations extends EventResponse {
+  tickets?: TicketResponse[]
+  eventStats?: EventStatsResponse | null
 }

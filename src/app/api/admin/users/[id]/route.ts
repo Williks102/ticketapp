@@ -300,14 +300,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         `Impossible de supprimer un utilisateur avec ${activeTickets.length} billet(s) actif(s).`,
         409,
         {
-          activeTickets: activeTickets.length,
-          tickets: activeTickets.map(ticket => ({
-            id: ticket.id,
-            numeroTicket: ticket.numeroTicket,
-            eventTitle: ticket.event.titre,
-            eventDate: ticket.event.dateDebut.toISOString(),
-            statut: ticket.statut
-          })),
+      summary: {
+      activeTicketsCount: activeTickets.length,
+      tickets: activeTickets.map(ticket => ({
+        id: ticket.id,
+        numeroTicket: ticket.numeroTicket,
+        eventTitle: ticket.event.titre,
+        eventDate: ticket.event.dateDebut.toISOString(),
+        statut: ticket.statut
+      }))
+    },
           options: {
             cancelTickets: 'Annuler tous les billets - Ajouter ?cancelTickets=true',
             transferTickets: 'Transférer les billets en invités - Ajouter ?transferTickets=true',

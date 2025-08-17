@@ -538,7 +538,7 @@ export default function AdminDashboard() {
             Vue d'ensemble de votre plateforme de billetterie
           </p>
           {/* ✅ CORRECTION - Afficher l'horodatage seulement côté client */}
-          {mounted && lastRefresh && (
+          {isClient && lastRefresh && (
             <p className="text-xs text-gray-400 mt-2">
               Dernière mise à jour : {lastRefresh.toLocaleTimeString('fr-FR')}
             </p>
