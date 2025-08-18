@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       folder: folder,
       resource_type: 'image',
       quality: 'auto',
-      format: 'auto',
+      fetch_format: 'auto',
       transformation: [
         { width: 1200, height: 800, crop: 'limit' }, // Limiter la taille max
         { quality: 'auto:good' },

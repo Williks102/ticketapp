@@ -58,7 +58,7 @@ export interface CloudinaryUploadOptions {
   tags?: string[]
   resource_type?: 'image' | 'video' | 'raw' | 'auto'
   quality?: string | number
-  format?: string
+  fetch_format?: string
   width?: number
   height?: number
   crop?: string
@@ -160,7 +160,7 @@ export async function uploadImage(
     folder: 'uploads',
     resource_type: 'image',
     quality: 'auto',
-    format: 'auto',
+    fetch_format: 'auto',
     ...options
   }
 

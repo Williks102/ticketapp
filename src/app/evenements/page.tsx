@@ -26,6 +26,7 @@ interface Event {
 
 export default function EventsPage() {
   const router = useRouter()
+  // ✅ CORRECTION 1: Initialiser avec des tableaux vides
   const [events, setEvents] = useState<Event[]>([])
   const [filteredEvents, setFilteredEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(true)
@@ -37,7 +38,7 @@ export default function EventsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const eventsPerPage = 12
 
-  // ✅ CORRECTION - Fonction unifiée pour récupérer le token
+  // ✅ CORRECTION 2: Fonction token unifiée
   const getAuthToken = () => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('token') || sessionStorage.getItem('token')
@@ -60,8 +61,10 @@ export default function EventsPage() {
       const data = await response.json()
 
       if (data.success) {
-        setEvents(data.data)
-        setFilteredEvents(data.data)
+        // ✅ CORRECTION 3: Vérifier que data.data existe et est un tableau
+        const eventsData = Array.isArray(data.data) ? data.data : []
+        setEvents(eventsData)
+        setFilteredEvents(eventsData)
       } else {
         throw new Error(data.message || 'Erreur lors du chargement')
       }
@@ -69,6 +72,9 @@ export default function EventsPage() {
     } catch (err) {
       console.error('Erreur chargement événements:', err)
       setError(err instanceof Error ? err.message : 'Erreur de chargement')
+      // ✅ CORRECTION 4: En cas d'erreur, garder des tableaux vides
+      setEvents([])
+      setFilteredEvents([])
     } finally {
       setLoading(false)
     }
@@ -78,62 +84,78 @@ export default function EventsPage() {
     fetchEvents()
   }, [])
 
-  // Filtrer et trier les événements
+  // ✅ CORRECTION 5: Filtrage et tri sécurisés
   useEffect(() => {
-    let filtered = [...events]
+    // Toujours s'assurer qu'on travaille avec un tableau
+    const safeEvents = Array.isArray(events) ? events : []
+    let filtered = [...safeEvents]
 
     // Filtrage par terme de recherche
-    if (searchTerm) {
-      filtered = filtered.filter(event =>
-        event.titre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        event.lieu.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        event.organisateur.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        event.description.toLowerCase().includes(searchTerm.toLowerCase())
-      )
+    if (searchTerm && searchTerm.trim()) {
+      filtered = filtered.filter(event => {
+        // Vérifier que les propriétés existent avant de les utiliser
+        const titre = event?.titre || ''
+        const lieu = event?.lieu || ''
+        const organisateur = event?.organisateur || ''
+        const description = event?.description || ''
+        
+        const searchLower = searchTerm.toLowerCase()
+        
+        return titre.toLowerCase().includes(searchLower) ||
+               lieu.toLowerCase().includes(searchLower) ||
+               organisateur.toLowerCase().includes(searchLower) ||
+               description.toLowerCase().includes(searchLower)
+      })
     }
 
     // Filtrage par catégorie
-    if (filterCategory) {
+    if (filterCategory && filterCategory.trim()) {
       filtered = filtered.filter(event => 
-        event.categories?.includes(filterCategory)
+        Array.isArray(event?.categories) && event.categories.includes(filterCategory)
       )
     }
 
     // Filtrage par prix
     if (filterPrice) {
       if (filterPrice === 'free') {
-        filtered = filtered.filter(event => event.prix === 0)
+        filtered = filtered.filter(event => (event?.prix || 0) === 0)
       } else if (filterPrice === 'paid') {
-        filtered = filtered.filter(event => event.prix > 0)
+        filtered = filtered.filter(event => (event?.prix || 0) > 0)
       }
     }
 
-    // Tri
+    // Tri sécurisé
     filtered.sort((a, b) => {
+      // Vérifier que les objets existent
+      if (!a || !b) return 0
+      
       switch (sortBy) {
         case 'price-asc':
-          return a.prix - b.prix
+          return (a.prix || 0) - (b.prix || 0)
         case 'price-desc':
-          return b.prix - a.prix
+          return (b.prix || 0) - (a.prix || 0)
         case 'popularity':
           return (b.ticketsVendus || 0) - (a.ticketsVendus || 0)
         case 'date':
         default:
-          return new Date(a.dateDebut).getTime() - new Date(b.dateDebut).getTime()
+          // Vérifier que les dates existent
+          const dateA = a.dateDebut ? new Date(a.dateDebut).getTime() : 0
+          const dateB = b.dateDebut ? new Date(b.dateDebut).getTime() : 0
+          return dateA - dateB
       }
     })
 
     setFilteredEvents(filtered)
+    setCurrentPage(1) // Reset à la première page quand on filtre
   }, [events, searchTerm, filterCategory, filterPrice, sortBy])
 
   const handleSearch = (term: string) => {
     setSearchTerm(term)
-    setCurrentPage(1)
   }
 
   const handleReserveFree = async (eventId: string) => {
     try {
-      const token = getAuthToken() // ✅ CORRECTION
+      const token = getAuthToken()
       
       if (!token) {
         // Rediriger vers la page de connexion
@@ -141,7 +163,7 @@ export default function EventsPage() {
         return
       }
 
-      const response = await fetch('/api/billets/gratuit', {
+      const response = await fetch('/api/tickets/free', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -171,7 +193,7 @@ export default function EventsPage() {
 
   const handlePurchasePaid = async (eventId: string) => {
     try {
-      const token = getAuthToken() // ✅ CORRECTION
+      const token = getAuthToken()
       
       if (!token) {
         router.push(`/auth/login?redirect=/evenements/${eventId}`)
@@ -189,30 +211,53 @@ export default function EventsPage() {
 
   // Formater la date
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('fr-FR', {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
+    if (!dateString) return 'Date inconnue'
+    
+    try {
+      const date = new Date(dateString)
+      if (isNaN(date.getTime())) return 'Date invalide'
+      
+      return date.toLocaleDateString('fr-FR', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    } catch (error) {
+      return 'Date invalide'
+    }
   }
 
   // Formater le prix
   const formatPrice = (price: number) => {
-    if (price === 0) {
+    if (!price || price === 0) {
       return 'Gratuit'
     }
-    return `${(price / 100).toLocaleString()} FCFA`
+    return `${(price / 100).toLocaleString('fr-FR')} FCFA`
   }
 
-  // Pagination
+  // ✅ CORRECTION 6: Pagination sécurisée
+  const safeFilteredEvents = Array.isArray(filteredEvents) ? filteredEvents : []
   const indexOfLastEvent = currentPage * eventsPerPage
   const indexOfFirstEvent = indexOfLastEvent - eventsPerPage
-  const currentEvents = filteredEvents.slice(indexOfFirstEvent, indexOfLastEvent)
-  const totalPages = Math.ceil(filteredEvents.length / eventsPerPage)
+  const currentEvents = safeFilteredEvents.slice(indexOfFirstEvent, indexOfLastEvent)
+  const totalPages = Math.ceil(safeFilteredEvents.length / eventsPerPage)
+
+  // Obtenir toutes les catégories uniques pour le filtre
+  const getAllCategories = () => {
+    const safeEvents = Array.isArray(events) ? events : []
+    const categories = new Set<string>()
+    
+    safeEvents.forEach(event => {
+      if (Array.isArray(event?.categories)) {
+        event.categories.forEach(cat => categories.add(cat))
+      }
+    })
+    
+    return Array.from(categories).sort()
+  }
 
   // États de chargement et d'erreur
   if (loading) {
@@ -225,10 +270,35 @@ export default function EventsPage() {
               <div className="h-8 bg-gray-200 rounded w-64 mb-6"></div>
               <div className="bg-gray-200 h-32 rounded-lg mb-6"></div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[1, 2, 3, 4, 5, 6].map(i => (
-                  <div key={i} className="bg-gray-200 h-96 rounded-lg"></div>
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="bg-gray-200 h-64 rounded-lg"></div>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  if (error) {
+    return (
+      <>
+        <Navbar />
+        <div className="min-h-screen bg-gray-50 py-8">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center py-12">
+              <svg className="mx-auto h-12 w-12 text-red-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Erreur de chargement</h3>
+              <p className="text-gray-500 mb-6">{error}</p>
+              <button
+                onClick={fetchEvents}
+                className="bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 transition-colors"
+              >
+                Réessayer
+              </button>
             </div>
           </div>
         </div>
@@ -243,163 +313,95 @@ export default function EventsPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* En-tête */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">Événements</h1>
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">
+              Découvrez nos événements
+            </h1>
             <p className="text-gray-600">
-              Découvrez tous nos événements disponibles à la réservation
+              {safeFilteredEvents.length} événement{safeFilteredEvents.length > 1 ? 's' : ''} disponible{safeFilteredEvents.length > 1 ? 's' : ''}
             </p>
           </div>
 
           {/* Barre de recherche et filtres */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6 mb-8">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {/* Recherche */}
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Rechercher
-                </label>
-                <input
-                  type="text"
-                  placeholder="Nom, lieu, organisateur..."
-                  value={searchTerm}
-                  onChange={(e) => handleSearch(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Rechercher un événement..."
+                    value={searchTerm}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  />
+                  <svg className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
               </div>
 
               {/* Filtre catégorie */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Catégorie
-                </label>
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 >
-                  <option value="">Toutes catégories</option>
-                  <option value="concert">Concert</option>
-                  <option value="theatre">Théâtre</option>
-                  <option value="festival">Festival</option>
-                  <option value="sport">Sport</option>
-                  <option value="conference">Conférence</option>
-                  <option value="exposition">Exposition</option>
-                  <option value="cinema">Cinéma</option>
-                  <option value="danse">Danse</option>
+                  <option value="">Toutes les catégories</option>
+                  {getAllCategories().map(category => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
                 </select>
               </div>
 
               {/* Filtre prix */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Prix
-                </label>
                 <select
                   value={filterPrice}
                   onChange={(e) => setFilterPrice(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 >
                   <option value="">Tous les prix</option>
                   <option value="free">Gratuit</option>
                   <option value="paid">Payant</option>
                 </select>
               </div>
+            </div>
 
-              {/* Tri */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Trier par
-                </label>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                >
-                  <option value="date">Date</option>
-                  <option value="price-asc">Prix croissant</option>
-                  <option value="price-desc">Prix décroissant</option>
-                  <option value="popularity">Popularité</option>
-                </select>
+            {/* Tri */}
+            <div className="mt-4 flex items-center space-x-4">
+              <span className="text-sm font-medium text-gray-700">Trier par :</span>
+              <div className="flex space-x-2">
+                {[
+                  { value: 'date', label: 'Date' },
+                  { value: 'price-asc', label: 'Prix croissant' },
+                  { value: 'price-desc', label: 'Prix décroissant' },
+                  { value: 'popularity', label: 'Popularité' }
+                ].map(option => (
+                  <button
+                    key={option.value}
+                    onClick={() => setSortBy(option.value)}
+                    className={`px-3 py-1 text-sm rounded-full transition-colors ${
+                      sortBy === option.value
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
             </div>
-
-            {/* Bouton reset */}
-            <div className="mt-4 flex justify-end">
-              <button
-                onClick={() => {
-                  setSearchTerm('')
-                  setFilterCategory('')
-                  setFilterPrice('')
-                  setSortBy('date')
-                  setCurrentPage(1)
-                }}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Réinitialiser les filtres
-              </button>
-            </div>
           </div>
 
-          {/* Résultats */}
-          <div className="mb-6 flex justify-between items-center">
-            <p className="text-gray-600">
-              {filteredEvents.length} événement{filteredEvents.length > 1 ? 's' : ''} trouvé{filteredEvents.length > 1 ? 's' : ''}
-            </p>
-            {totalPages > 1 && (
-              <p className="text-gray-600">
-                Page {currentPage} sur {totalPages}
-              </p>
-            )}
-          </div>
-
-          {/* Grille d'événements */}
-          {error ? (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-              <svg className="w-12 h-12 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <h3 className="text-lg font-medium text-red-800 mb-2">Erreur de chargement</h3>
-              <p className="text-red-600 mb-4">{error}</p>
-              <button
-                onClick={fetchEvents}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
-              >
-                Réessayer
-              </button>
-            </div>
-          ) : currentEvents.length === 0 ? (
-            <div className="text-center py-12">
-              <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Aucun événement trouvé</h3>
-              <p className="text-gray-500 mb-4">
-                {events.length === 0 
-                  ? "Aucun événement n'est disponible pour le moment"
-                  : "Modifiez vos critères de recherche ou consultez tous les événements"
-                }
-              </p>
-              {events.length > 0 && (
-                <button
-                  onClick={() => {
-                    setSearchTerm('')
-                    setFilterCategory('')
-                    setFilterPrice('')
-                    setSortBy('date')
-                    setCurrentPage(1)
-                  }}
-                  className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors"
-                >
-                  Voir tous les événements
-                </button>
-              )}
-            </div>
-          ) : (
+          {/* Liste des événements */}
+          {currentEvents.length > 0 ? (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                {currentEvents.map((event) => (
-                  <div key={event.id} className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-                    {/* Image de l'événement */}
-                    <div className="h-48 bg-gradient-to-r from-orange-400 to-orange-600 relative">
+                {currentEvents.map(event => (
+                  <div key={event.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+                    {/* Image */}
+                    <div className="h-48 bg-gray-200 relative">
                       {event.image ? (
                         <img
                           src={event.image}
@@ -407,133 +409,101 @@ export default function EventsPage() {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-white">
-                          <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        <div className="w-full h-full flex items-center justify-center">
+                          <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                           </svg>
                         </div>
                       )}
                       
                       {/* Badge prix */}
                       <div className="absolute top-3 right-3">
-                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                          event.prix === 0 
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          (event.prix || 0) === 0 
                             ? 'bg-green-100 text-green-800' 
-                            : 'bg-white text-gray-900'
+                            : 'bg-blue-100 text-blue-800'
                         }`}>
-                          {formatPrice(event.prix)}
+                          {formatPrice(event.prix || 0)}
                         </span>
                       </div>
-
-                      {/* Badge statut */}
-                      {event.placesRestantes === 0 && (
-                        <div className="absolute top-3 left-3">
-                          <span className="px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-800">
-                            Complet
-                          </span>
-                        </div>
-                      )}
                     </div>
 
-                    {/* Contenu de la carte */}
+                    {/* Contenu */}
                     <div className="p-6">
-                      {/* Catégories */}
-                      {event.categories && event.categories.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-3">
-                          {event.categories.slice(0, 2).map((category, index) => (
-                            <span key={index} className="px-2 py-1 bg-orange-100 text-orange-800 text-xs rounded-full">
-                              {category}
-                            </span>
-                          ))}
-                          {event.categories.length > 2 && (
-                            <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
-                              +{event.categories.length - 2}
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Titre */}
-                      <h3 className="text-xl font-bold text-gray-900 mb-2 line-clamp-2">
-                        {event.titre}
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        {event.titre || 'Titre non disponible'}
                       </h3>
-
-                      {/* Description */}
-                      <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-                        {event.description}
-                      </p>
-
-                      {/* Informations */}
-                      <div className="space-y-2 mb-4">
-                        {/* Date */}
-                        <div className="flex items-center text-sm text-gray-600">
+                      
+                      <div className="space-y-2 text-sm text-gray-600 mb-4">
+                        <div className="flex items-center">
                           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                           </svg>
                           {formatDate(event.dateDebut)}
                         </div>
-
-                        {/* Lieu */}
-                        <div className="flex items-center text-sm text-gray-600">
+                        
+                        <div className="flex items-center">
                           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                           </svg>
-                          {event.lieu}
+                          {event.lieu || 'Lieu non spécifié'}
                         </div>
-
-                        {/* Organisateur */}
-                        <div className="flex items-center text-sm text-gray-600">
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                          </svg>
-                          {event.organisateur}
-                        </div>
-
-                        {/* Places restantes */}
-                        <div className="flex items-center text-sm text-gray-600">
+                        
+                        <div className="flex items-center">
                           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                           </svg>
-                          {event.placesRestantes} place{event.placesRestantes > 1 ? 's' : ''} restante{event.placesRestantes > 1 ? 's' : ''}
+                          {(event.placesRestantes || 0)} place{(event.placesRestantes || 0) > 1 ? 's' : ''} restante{(event.placesRestantes || 0) > 1 ? 's' : ''}
                         </div>
                       </div>
 
-                      {/* Boutons d'action */}
-                      <div className="flex space-x-2">
-                        {event.placesRestantes === 0 ? (
-                          <button 
-                            disabled
-                            className="flex-1 bg-gray-100 text-gray-400 px-4 py-2 rounded-lg cursor-not-allowed"
+                      {/* Catégories */}
+                      {Array.isArray(event.categories) && event.categories.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {event.categories.slice(0, 3).map(category => (
+                            <span key={category} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
+                              {category}
+                            </span>
+                          ))}
+                          {event.categories.length > 3 && (
+                            <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
+                              +{event.categories.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Description */}
+                      <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+                        {event.description || 'Aucune description disponible'}
+                      </p>
+
+                      {/* Actions */}
+                      <div className="space-y-2">
+                        {(event.prix || 0) === 0 ? (
+                          <button
+                            onClick={() => handleReserveFree(event.id)}
+                            disabled={(event.placesRestantes || 0) <= 0}
+                            className="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                           >
-                            Complet
+                            {(event.placesRestantes || 0) > 0 ? 'Réserver gratuitement' : 'Complet'}
                           </button>
                         ) : (
-                          <>
-                            {event.prix === 0 ? (
-                              <button
-                                onClick={() => handleReserveFree(event.id)}
-                                className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium"
-                              >
-                                Réserver gratuitement
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handlePurchasePaid(event.id)}
-                                className="flex-1 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors font-medium"
-                              >
-                                Acheter - {formatPrice(event.prix)}
-                              </button>
-                            )}
-                          </>
+                          <button
+                            onClick={() => handlePurchasePaid(event.id)}
+                            disabled={(event.placesRestantes || 0) <= 0}
+                            className="w-full bg-orange-600 text-white py-2 px-4 rounded-lg hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {(event.placesRestantes || 0) > 0 ? `Acheter - ${formatPrice(event.prix || 0)}` : 'Complet'}
+                          </button>
                         )}
-
-                        {/* Bouton détails */}
+                        
                         <button
                           onClick={() => router.push(`/evenements/${event.id}`)}
-                          className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                          className="w-full bg-white text-gray-700 py-2 px-4 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
                         >
-                          Détails
+                          Voir les détails
                         </button>
                       </div>
                     </div>
@@ -543,54 +513,56 @@ export default function EventsPage() {
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="flex justify-center items-center space-x-2">
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
-                    className="px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                  >
-                    Précédent
-                  </button>
-
-                  <div className="flex space-x-1">
-                    {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                      let pageNumber
-                      if (totalPages <= 5) {
-                        pageNumber = i + 1
-                      } else if (currentPage <= 3) {
-                        pageNumber = i + 1
-                      } else if (currentPage >= totalPages - 2) {
-                        pageNumber = totalPages - 4 + i
-                      } else {
-                        pageNumber = currentPage - 2 + i
-                      }
-
-                      return (
-                        <button
-                          key={pageNumber}
-                          onClick={() => setCurrentPage(pageNumber)}
-                          className={`px-3 py-2 border rounded-lg ${
-                            currentPage === pageNumber
-                              ? 'bg-orange-600 text-white border-orange-600'
-                              : 'border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          {pageNumber}
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  <button
-                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                  >
-                    Suivant
-                  </button>
+                <div className="flex justify-center">
+                  <nav className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage <= 1}
+                      className="px-3 py-2 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Précédent
+                    </button>
+                    
+                    <span className="px-4 py-2 text-sm text-gray-700">
+                      Page {currentPage} sur {totalPages}
+                    </span>
+                    
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage >= totalPages}
+                      className="px-3 py-2 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Suivant
+                    </button>
+                  </nav>
                 </div>
               )}
             </>
+          ) : (
+            <div className="text-center py-12">
+              <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Aucun événement trouvé</h3>
+              <p className="text-gray-500 mb-6">
+                {searchTerm || filterCategory || filterPrice 
+                  ? 'Aucun événement ne correspond à vos critères de recherche.'
+                  : 'Aucun événement n\'est disponible pour le moment.'
+                }
+              </p>
+              {(searchTerm || filterCategory || filterPrice) && (
+                <button
+                  onClick={() => {
+                    setSearchTerm('')
+                    setFilterCategory('')
+                    setFilterPrice('')
+                  }}
+                  className="bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 transition-colors"
+                >
+                  Effacer les filtres
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
