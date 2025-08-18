@@ -75,6 +75,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     }
     return pathname.startsWith(href)
   }
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+      window.location.href = '/'
+    } catch (error) {
+      console.error('Erreur lors de la déconnexion:', error)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -160,6 +168,16 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             </svg>
             Retour au site
           </Link>
+
+          <button 
+              onClick={handleLogout}
+              className="flex items-center justify-center w-full px-3 py-2 text-sm text-red-600 hover:text-red-700 bg-white hover:bg-red-50 rounded-lg transition-all duration-200 border border-gray-100 hover:border-red-200"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Déconnexion
+            </button>
         </div>
       </div>
 

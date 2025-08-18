@@ -656,6 +656,31 @@ export function sanitizeFreeReservationData(data: any) {
     guestPrenom: data.guestPrenom ? sanitizeString(data.guestPrenom) : null
   }
 }
+/**
+ * Récupère l'adresse IP du client depuis NextRequest
+ */
+export function getClientIP(request: NextRequest): string | null {
+  // Headers de proxy (Vercel, Cloudflare, etc.)
+  const forwardedFor = request.headers.get('x-forwarded-for')
+  if (forwardedFor) {
+    return forwardedFor.split(',')[0].trim()
+  }
+  
+  // Header x-real-ip
+  const realIp = request.headers.get('x-real-ip')
+  if (realIp) {
+    return realIp.trim()
+  }
+  
+  // Header CF-Connecting-IP (Cloudflare)
+  const cfIp = request.headers.get('cf-connecting-ip')
+  if (cfIp) {
+    return cfIp.trim()
+  }
+  
+  // Fallback pour le développement local
+  return '127.0.0.1'
+}
 
 
 

@@ -1,6 +1,6 @@
 // src/app/api/user/billets/[id]/qr/route.ts - API pour QR codes spécifiques
 import { NextRequest } from 'next/server'
-import { createApiResponse, createApiError, authenticateRequest } from '@/lib/api-utils'
+import { createApiResponse, createApiError, authenticateRequest, getClientIP } from '@/lib/api-utils'
 import { JWTPayload } from '@/types/api'
 import prisma from '@/lib/prisma'
 
@@ -83,7 +83,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         },
         userId: user.id,
         metadata: {
-          ipAddress: request.ip || 'unknown'
+          ipAddress: getClientIP(request) || 'unknown'
         }
       }
     }).catch(err => console.error('❌ Erreur log QR access:', err))

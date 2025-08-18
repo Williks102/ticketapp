@@ -16,6 +16,11 @@ interface QRCodeModalProps {
       lieu: string
     }
     prix: number
+    security?: {
+      generatedAt: string
+      expiresAt: string
+      checksum: string
+    }
   }
 }
 
@@ -213,6 +218,26 @@ export default function QRCodeModal({ isOpen, onClose, ticket }: QRCodeModalProp
                   <span className="text-sm text-gray-600 font-medium">
                     {formatPrice(ticket.prix)}
                   </span>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex">
+                  <svg className="w-5 h-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <p className="text-sm text-blue-800 font-medium">
+                      QR Code sécurisé
+                    </p>
+                    {ticket.security && (
+                      <div className="text-xs text-blue-700 mt-1 space-y-1">
+                        <p>Généré: {new Date(ticket.security.generatedAt).toLocaleString('fr-FR')}</p>
+                        <p>Expire: {new Date(ticket.security.expiresAt).toLocaleString('fr-FR')}</p>
+                        <p>Checksum: {ticket.security.checksum}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

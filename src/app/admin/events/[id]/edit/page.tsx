@@ -1,9 +1,9 @@
-// src/app/admin/events/create/page.tsx - VERSION COMPLÈTE CORRIGÉE
+// src/app/admin/events/[id]/edit/page.tsx - PAGE ÉDITION ÉVÉNEMENT
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useRouter, useParams } from 'next/navigation'
+import { ArrowLeft, Save, Trash2 } from 'lucide-react'
 import { ImageUpload } from '@/components/ImageUpload'
 
 interface EventFormData {
@@ -18,6 +18,16 @@ interface EventFormData {
   organisateur: string
   image?: string
   categories: string[]
+  statut: 'ACTIVE' | 'DRAFT' | 'CANCELLED' | 'COMPLETED'
+}
+
+interface EventDetails extends EventFormData {
+  id: string
+  placesRestantes: number
+  ticketsVendus: number
+  revenue: number
+  createdAt: string
+  updatedAt: string
 }
 
 const CATEGORIES_OPTIONS = [
@@ -25,12 +35,25 @@ const CATEGORIES_OPTIONS = [
   'Conférence', 'Formation', 'Networking', 'Festival', 'Divers'
 ]
 
-export default function CreateEventPage() {
+const STATUS_OPTIONS = [
+  { value: 'DRAFT', label: 'Brouillon', color: 'gray' },
+  { value: 'ACTIVE', label: 'Actif', color: 'green' },
+  { value: 'CANCELLED', label: 'Annulé', color: 'red' },
+  { value: 'COMPLETED', label: 'Terminé', color: 'blue' }
+]
+
+export default function EditEventPage() {
   const router = useRouter()
+  const params = useParams()
+  const eventId = params?.id as string
+
   const [loading, setLoading] = useState(false)
+  const [loadingData, setLoadingData] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [eventType, setEventType] = useState<'free' | 'paid'>('paid')
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [originalEvent, setOriginalEvent] = useState<EventDetails | null>(null)
   
   const [formData, setFormData] = useState<EventFormData>({
     titre: '',
@@ -43,7 +66,8 @@ export default function CreateEventPage() {
     nbPlaces: 100,
     organisateur: '',
     image: '',
-    categories: []
+    categories: [],
+    statut: 'ACTIVE'
   })
 
   const [priceInFCFA, setPriceInFCFA] = useState(0)
@@ -51,6 +75,82 @@ export default function CreateEventPage() {
   // ✅ CORRECTION - Fonction token unifiée
   const getAuthToken = () => {
     return localStorage.getItem('token') || sessionStorage.getItem('token')
+  }
+
+  // Charger les données de l'événement
+  useEffect(() => {
+    if (eventId) {
+      fetchEventData()
+    }
+  }, [eventId])
+
+  const fetchEventData = async () => {
+    try {
+      setLoadingData(true)
+      setError(null)
+
+      const token = getAuthToken()
+      if (!token) {
+        router.push('/auth/login')
+        return
+      }
+
+      const response = await fetch(`/api/admin/events/${eventId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Événement non trouvé')
+        }
+        throw new Error('Erreur lors du chargement de l\'événement')
+      }
+
+      const { data: event } = await response.json()
+      setOriginalEvent(event)
+
+      // Convertir les dates ISO en format datetime-local
+      const dateDebut = new Date(event.dateDebut)
+      const dateFin = new Date(event.dateFin)
+
+      const formatDateForInput = (date: Date) => {
+        const year = date.getFullYear()
+        const month = String(date.getMonth() + 1).padStart(2, '0')
+        const day = String(date.getDate()).padStart(2, '0')
+        const hours = String(date.getHours()).padStart(2, '0')
+        const minutes = String(date.getMinutes()).padStart(2, '0')
+        return `${year}-${month}-${day}T${hours}:${minutes}`
+      }
+
+      setFormData({
+        titre: event.titre,
+        description: event.description,
+        lieu: event.lieu,
+        adresse: event.adresse || '',
+        dateDebut: formatDateForInput(dateDebut),
+        dateFin: formatDateForInput(dateFin),
+        prix: event.prix,
+        nbPlaces: event.nbPlaces,
+        organisateur: event.organisateur || '',
+        image: event.image || '',
+        categories: event.categories || [],
+        statut: event.statut
+      })
+
+      // Déterminer le type d'événement et prix
+      const isGratuit = event.prix === 0
+      setEventType(isGratuit ? 'free' : 'paid')
+      setPriceInFCFA(isGratuit ? 0 : event.prix / 100)
+
+    } catch (err) {
+      console.error('Erreur chargement événement:', err)
+      setError(err instanceof Error ? err.message : 'Erreur inconnue')
+    } finally {
+      setLoadingData(false)
+    }
   }
 
   // Gestion du changement de type d'événement
@@ -118,6 +218,13 @@ export default function CreateEventPage() {
       setError('Le prix doit être supérieur à 0 pour un événement payant')
       return false
     }
+
+    // Validation spécifique pour la modification
+    if (originalEvent && formData.nbPlaces < originalEvent.ticketsVendus) {
+      setError(`Impossible de réduire le nombre de places en dessous de ${originalEvent.ticketsVendus} (billets déjà vendus)`)
+      return false
+    }
+
     return true
   }
 
@@ -146,10 +253,10 @@ export default function CreateEventPage() {
         prix: eventType === 'free' ? 0 : formData.prix
       }
 
-      console.log('Données à envoyer:', eventData)
+      console.log('Données à modifier:', eventData)
 
-      const response = await fetch('/api/admin/events', {
-        method: 'POST',
+      const response = await fetch(`/api/admin/events/${eventId}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
@@ -159,25 +266,73 @@ export default function CreateEventPage() {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.message || 'Erreur lors de la création de l\'événement')
+        throw new Error(errorData.message || 'Erreur lors de la modification de l\'événement')
       }
 
-      const createdEvent = await response.json()
-      console.log('Événement créé:', createdEvent)
+      const updatedEvent = await response.json()
+      console.log('Événement modifié:', updatedEvent)
 
       setSuccess(true)
 
       // Redirection après succès
       setTimeout(() => {
-        router.push('/admin/events')
+        router.push(`/admin/events/${eventId}`)
       }, 2000)
 
     } catch (err) {
-      console.error('Erreur création événement:', err)
+      console.error('Erreur modification événement:', err)
       setError(err instanceof Error ? err.message : 'Erreur inconnue')
     } finally {
       setLoading(false)
     }
+  }
+
+  // Suppression de l'événement
+  const handleDelete = async () => {
+    try {
+      setLoading(true)
+      const token = getAuthToken()
+      if (!token) return
+
+      const response = await fetch(`/api/admin/events/${eventId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Erreur lors de la suppression')
+      }
+
+      router.push('/admin/events')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur lors de la suppression')
+    } finally {
+      setLoading(false)
+      setShowDeleteModal(false)
+    }
+  }
+
+  // Chargement initial
+  if (loadingData) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-4xl mx-auto px-4">
+          <div className="bg-white rounded-lg shadow-lg p-8">
+            <div className="animate-pulse space-y-6">
+              <div className="h-8 bg-gray-300 rounded w-1/2"></div>
+              <div className="space-y-4">
+                <div className="h-4 bg-gray-300 rounded w-full"></div>
+                <div className="h-4 bg-gray-300 rounded w-3/4"></div>
+                <div className="h-32 bg-gray-300 rounded w-full"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   // Page de succès
@@ -192,10 +347,10 @@ export default function CreateEventPage() {
               </svg>
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Événement créé avec succès!
+              Événement modifié avec succès!
             </h2>
             <p className="text-gray-600 mb-6">
-              Redirection vers la liste des événements...
+              Redirection vers les détails de l'événement...
             </p>
           </div>
         </div>
@@ -215,10 +370,39 @@ export default function CreateEventPage() {
             <ArrowLeft className="w-4 h-4 mr-2" />
             Retour
           </button>
-          <h1 className="text-3xl font-bold text-gray-900">Créer un nouvel événement</h1>
-          <p className="text-gray-600 mt-2">
-            Remplissez les informations pour créer votre événement
-          </p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">
+                Modifier l'événement
+              </h1>
+              <p className="text-gray-600 mt-2">
+                {originalEvent?.titre}
+              </p>
+            </div>
+            
+            {/* Statut et actions */}
+            <div className="flex items-center space-x-3">
+              {originalEvent && (
+                <div className="flex items-center space-x-2 text-sm">
+                  <span className="text-gray-500">
+                    {originalEvent.ticketsVendus} billets vendus
+                  </span>
+                  <span className="text-gray-300">•</span>
+                  <span className="text-gray-500">
+                    {originalEvent.placesRestantes} places restantes
+                  </span>
+                </div>
+              )}
+              
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="text-red-600 hover:text-red-700 p-2"
+                title="Supprimer l'événement"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Formulaire */}
@@ -235,6 +419,30 @@ export default function CreateEventPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-8">
+            {/* Statut de l'événement */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2">
+                Statut de l'événement
+              </h3>
+              
+              <div className="flex flex-wrap gap-2">
+                {STATUS_OPTIONS.map((status) => (
+                  <button
+                    key={status.value}
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, statut: status.value as any }))}
+                    className={`px-4 py-2 text-sm rounded-full border transition-all duration-200 ${
+                      formData.statut === status.value
+                        ? `bg-${status.color}-500 text-white border-${status.color}-500`
+                        : `bg-white text-gray-700 border-gray-300 hover:border-${status.color}-400`
+                    }`}
+                  >
+                    {status.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Informations de base */}
             <div className="space-y-6">
               <h3 className="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2">
@@ -251,7 +459,6 @@ export default function CreateEventPage() {
                     value={formData.titre}
                     onChange={(e) => setFormData(prev => ({ ...prev, titre: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                    placeholder="Ex: Concert de jazz au coucher du soleil"
                     required
                   />
                 </div>
@@ -265,7 +472,6 @@ export default function CreateEventPage() {
                     onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                     rows={4}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                    placeholder="Décrivez votre événement en détail..."
                     required
                   />
                 </div>
@@ -279,7 +485,6 @@ export default function CreateEventPage() {
                     value={formData.lieu}
                     onChange={(e) => setFormData(prev => ({ ...prev, lieu: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                    placeholder="Ex: Palais de la Culture"
                     required
                   />
                 </div>
@@ -293,7 +498,6 @@ export default function CreateEventPage() {
                     value={formData.adresse}
                     onChange={(e) => setFormData(prev => ({ ...prev, adresse: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                    placeholder="Ex: Cocody, Abidjan"
                   />
                 </div>
 
@@ -306,7 +510,6 @@ export default function CreateEventPage() {
                     value={formData.organisateur}
                     onChange={(e) => setFormData(prev => ({ ...prev, organisateur: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                    placeholder="Ex: Association culturelle"
                   />
                 </div>
 
@@ -316,13 +519,17 @@ export default function CreateEventPage() {
                   </label>
                   <input
                     type="number"
-                    min="1"
+                    min={originalEvent?.ticketsVendus || 1}
                     value={formData.nbPlaces}
                     onChange={(e) => setFormData(prev => ({ ...prev, nbPlaces: Number(e.target.value) }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                    placeholder="Ex: 100"
                     required
                   />
+                  {originalEvent && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Minimum : {originalEvent.ticketsVendus} (billets déjà vendus)
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -408,7 +615,6 @@ export default function CreateEventPage() {
                       value={priceInFCFA}
                       onChange={(e) => handlePriceChange(Number(e.target.value))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                      placeholder="Ex: 5000"
                       required
                     />
                     <p className="text-xs text-gray-500 mt-1">
@@ -419,7 +625,7 @@ export default function CreateEventPage() {
               </div>
             </div>
 
-            {/* Upload d'image avec composant existant */}
+            {/* Upload d'image */}
             <div className="space-y-6">
               <h3 className="text-lg font-medium text-gray-900 border-b border-gray-200 pb-2">
                 Image de l'événement
@@ -433,19 +639,6 @@ export default function CreateEventPage() {
                 aspectRatio="landscape"
                 className="w-full"
               />
-              
-              {formData.image && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                  <div className="flex items-center">
-                    <svg className="w-5 h-5 text-green-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span className="text-green-800 text-sm">
-                      Image sélectionnée avec succès
-                    </span>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Catégories */}
@@ -470,14 +663,6 @@ export default function CreateEventPage() {
                   </button>
                 ))}
               </div>
-              
-              {formData.categories.length > 0 && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-blue-800 text-sm">
-                    <span className="font-medium">Catégories sélectionnées :</span> {formData.categories.join(', ')}
-                  </p>
-                </div>
-              )}
             </div>
 
             {/* Boutons de soumission */}
@@ -492,24 +677,70 @@ export default function CreateEventPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full sm:w-auto px-6 py-3 text-sm font-medium text-white bg-orange-600 border border-transparent rounded-md hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="w-full sm:w-auto px-6 py-3 text-sm font-medium text-white bg-orange-600 border border-transparent rounded-md hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
               >
                 {loading ? (
-                  <span className="flex items-center justify-center">
+                  <span className="flex items-center">
                     <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Création en cours...
+                    Modification en cours...
                   </span>
                 ) : (
-                  'Créer l\'événement'
+                  <span className="flex items-center">
+                    <Save className="w-4 h-4 mr-2" />
+                    Sauvegarder les modifications
+                  </span>
                 )}
               </button>
             </div>
           </form>
         </div>
       </div>
+
+      {/* Modal de suppression */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex items-center mb-4">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                <Trash2 className="h-6 w-6 text-red-600" />
+              </div>
+            </div>
+            
+            <div className="text-center">
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                Supprimer l'événement
+              </h3>
+              <p className="text-sm text-gray-500 mb-6">
+                Êtes-vous sûr de vouloir supprimer cet événement ? Cette action est irréversible.
+                {originalEvent?.ticketsVendus > 0 && (
+                  <span className="block mt-2 text-red-600 font-medium">
+                    ⚠️ {originalEvent.ticketsVendus} billets ont déjà été vendus pour cet événement.
+                  </span>
+                )}
+              </p>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={loading}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50"
+              >
+                {loading ? 'Suppression...' : 'Supprimer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

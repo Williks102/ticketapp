@@ -1,6 +1,6 @@
 // src/app/api/user/billets/[id]/pdf/route.ts - Génération PDF des billets
 import { NextRequest } from 'next/server'
-import { createApiError, authenticateRequest } from '@/lib/api-utils'
+import { createApiError, authenticateRequest, getClientIP } from '@/lib/api-utils'
 import { JWTPayload } from '@/types/api'
 import prisma from '@/lib/prisma'
 
@@ -81,7 +81,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         userId: user.id,
         metadata: {
           userAgent: request.headers.get('user-agent'),
-          ipAddress: request.ip || 'unknown'
+          ipAddress: getClientIP(request) || 'unknown'
         }
       }
     }).catch(err => console.error('❌ Erreur log PDF download:', err))
